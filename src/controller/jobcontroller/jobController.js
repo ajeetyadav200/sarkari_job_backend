@@ -1,3 +1,7 @@
+
+
+
+// controller/jobcontroller/jobController.js
 const { Job, jobStatusEnum } = require('../../models/job/letestJob');
 const JobValidator = require('../../utils/jobValidation');
 
@@ -65,37 +69,39 @@ class JobController {
         registrationOpen
       } = req.query;
       
+      console.log('Query params:', req.query);
+      
       // Build filter
       const filter = {};
       
       // Apply status filter
-      if (status) {
+      if (status && status !== '') {
         filter.status = status;
-      } else if (req.user.role !== 'admin') {
+      } else if (!req.user || req.user.role !== 'admin') {
         // For non-admin users, show only verified jobs
         filter.status = jobStatusEnum.VERIFIED;
         filter.showInPortal = true;
       }
       
       // Text search filters
-      if (departmentName) {
+      if (departmentName && departmentName !== '') {
         filter.departmentName = { $regex: departmentName, $options: 'i' };
       }
       
-      if (postName) {
+      if (postName && postName !== '') {
         filter.postName = { $regex: postName, $options: 'i' };
       }
       
       // Enum filters
-      if (typeOfForm) {
+      if (typeOfForm && typeOfForm !== '') {
         filter.typeOfForm = typeOfForm;
       }
       
-      if (modeOfForm) {
+      if (modeOfForm && modeOfForm !== '') {
         filter.modeOfForm = modeOfForm;
       }
       
-      if (paymentMode) {
+      if (paymentMode && paymentMode !== '') {
         filter.paymentMode = paymentMode;
       }
       
@@ -109,11 +115,15 @@ class JobController {
       // Pagination
       const skip = (parseInt(page) - 1) * parseInt(limit);
       const sortOrder = order === 'asc' ? 1 : -1;
+      const sortField = sortBy || 'createdAt';
+      
+      console.log('Filter:', filter);
+      console.log('Skip:', skip, 'Limit:', limit);
       
       // Execute query
       const [jobs, total] = await Promise.all([
         Job.find(filter)
-          .sort({ [sortBy]: sortOrder })
+          .sort({ [sortField]: sortOrder })
           .skip(skip)
           .limit(parseInt(limit))
           .lean(),
@@ -129,7 +139,7 @@ class JobController {
           null;
       });
       
-      return res.status(200).json({
+      const response = {
         success: true,
         data: jobs,
         pagination: {
@@ -138,7 +148,11 @@ class JobController {
           totalJobs: total,
           limit: parseInt(limit)
         }
-      });
+      };
+      
+      console.log('Response count:', jobs.length, 'Total:', total);
+      
+      return res.status(200).json(response);
       
     } catch (error) {
       console.error('Get all jobs error:', error);
@@ -211,7 +225,7 @@ class JobController {
       }
       
       // Check edit permissions
-      if (!job.canEdit(req.user._id, req.user.role)) {
+      if (req.user.role !== 'admin' && job.createdBy.userId.toString() !== req.user._id.toString()) {
         return res.status(403).json({
           success: false,
           message: 'You do not have permission to edit this job'
@@ -371,7 +385,7 @@ class JobController {
         'createdBy.userId': req.user._id
       };
       
-      if (status) {
+      if (status && status !== '') {
         filter.status = status;
       }
       
@@ -426,13 +440,37 @@ class JobController {
         });
       }
       
-      const stats = await Job.getStatistics();
+      // Get status-wise counts
+      const statusWise = await Job.aggregate([
+        {
+          $group: {
+            _id: '$status',
+            count: { $sum: 1 }
+          }
+        }
+      ]);
       
-      // Additional statistics
+      // Get total jobs count
+      const totalJobs = await Job.countDocuments();
+      
+      // Get department-wise counts
+      const departmentWise = await Job.aggregate([
+        {
+          $group: {
+            _id: '$departmentName',
+            count: { $sum: 1 }
+          }
+        },
+        { $sort: { count: -1 } },
+        { $limit: 10 }
+      ]);
+      
+      // Recent jobs
       const recentJobs = await Job.find()
         .sort({ createdAt: -1 })
         .limit(5)
-        .select('departmentName postName status createdAt');
+        .select('departmentName postName status createdAt createdBy.name')
+        .lean();
       
       // Count by type of form
       const typeStats = await Job.aggregate([
@@ -454,14 +492,18 @@ class JobController {
         }
       ]);
       
+      const stats = {
+        totalJobs,
+        statusWise,
+        departmentWise,
+        recentJobs,
+        typeStats,
+        modeStats
+      };
+      
       return res.status(200).json({
         success: true,
-        data: {
-          ...stats,
-          recentJobs,
-          typeStats,
-          modeStats
-        }
+        data: stats
       });
       
     } catch (error) {
@@ -528,7 +570,7 @@ class JobController {
       };
       
       // Text search
-      if (keyword) {
+      if (keyword && keyword !== '') {
         filter.$or = [
           { departmentName: { $regex: keyword, $options: 'i' } },
           { postName: { $regex: keyword, $options: 'i' } },
@@ -537,15 +579,15 @@ class JobController {
       }
       
       // Specific filters
-      if (department) {
+      if (department && department !== '') {
         filter.departmentName = { $regex: department, $options: 'i' };
       }
       
-      if (type) {
+      if (type && type !== '') {
         filter.typeOfForm = type;
       }
       
-      if (mode) {
+      if (mode && mode !== '') {
         filter.modeOfForm = mode;
       }
       

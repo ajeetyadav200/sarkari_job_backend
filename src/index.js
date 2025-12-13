@@ -8,6 +8,8 @@ const { connection_database } = require('./config/database');
 
 // Import routes
 const authRoutes = require('./router/route');
+const jobRoutes = require('./router/jobRoutes');
+const admitCardRoutes = require('./router/admitCardRoutes')
 
 // PORT
 const PORT = process.env.PORT || 5173;
@@ -19,7 +21,7 @@ const corsOptions = {
     optionsSuccessStatus: 200
 };
 
-// ✅ CORRECT ORDER: Middleware FIRST, then Routes
+
 
 // 1. CORS first
 app.use(cors(corsOptions));
@@ -44,6 +46,9 @@ app.use((req, res, next) => {
 
 // 5. Routes LAST
 app.use('/api/auth', authRoutes);
+app.use('/api/jobs', jobRoutes);
+app.use('/api/admit-cards', admitCardRoutes);
+
 
 // Health check route (add this back)
 app.get('/health', (req, res) => {
