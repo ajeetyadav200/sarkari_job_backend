@@ -1,15 +1,14 @@
-const AdmitCard = require('../../models/admitCard/admitCard');
+const Result = require('../../models/result/result');
 const { Job } = require('../../models/job/letestJob');
 const {
-  createAdmitCardValidation,
-  updateAdmitCardValidation,
+  createResultValidation,
+  updateResultValidation,
   updateStatusValidation,
-  admitCardFilterValidation
-} = require('../../utils/admitCardValidation');
+  resultFilterValidation
+} = require('../../utils/resultValidation');
 const mongoose = require('mongoose');
 
-// Import other models (if they exist, otherwise they will need to be created)
-// For now, we'll define placeholder variables
+// Import other models (if they exist)
 let Admission, LatestNotice;
 try {
   Admission = require('../../models/admission/admission');
@@ -22,14 +21,13 @@ try {
   LatestNotice = null;
 }
 
-// Create Admit Card
-const createAdmitCard = async (req, res) => {
+// Create Result
+const createResult = async (req, res) => {
   try {
-    // Log incoming request body for debugging
-    console.log('Incoming admit card data:', JSON.stringify(req.body, null, 2));
+    console.log('Incoming result data:', JSON.stringify(req.body, null, 2));
 
     // Validate request body
-    const { error, value } = createAdmitCardValidation.validate(req.body, { abortEarly: false });
+    const { error, value } = createResultValidation.validate(req.body, { abortEarly: false });
     if (error) {
       console.log('Validation errors:', error.details);
       return res.status(400).json({
@@ -86,14 +84,12 @@ const createAdmitCard = async (req, res) => {
           }
           break;
         default:
-          // Handle other models as needed
           break;
       }
     }
 
-    // Create admit card with all dynamic content fields
-    const admitCardData = {
-      // Basic fields
+    // Create result with all dynamic content fields
+    const resultData = {
       type: value.type,
       referenceId: value.referenceId || null,
       referenceModel: value.referenceModel || null,
@@ -101,27 +97,19 @@ const createAdmitCard = async (req, res) => {
       linkMenuField: value.linkMenuField || '',
       postTypeDetails: value.postTypeDetails || '',
       alsoShowLink: value.alsoShowLink || false,
-
-      // Dynamic content fields
       description: value.description || '',
       dynamicContent: value.dynamicContent || [],
       contentSections: value.contentSections || [],
       importantInstructions: value.importantInstructions || [],
       documentsRequired: value.documentsRequired || [],
-
-      // Dates
+      resultType: value.resultType || 'Final',
+      examName: value.examName || '',
       publishDate: value.publishDate || new Date(),
-      lastDate: value.lastDate || null,
-
-      // Status
+      resultDate: value.resultDate || null,
       status: req.user.role === 'admin' ? (value.status || 'pending') : 'pending',
-      admitCardStatus: value.admitCardStatus || 'active',
-
-      // Category and tags
+      resultStatus: value.resultStatus || 'active',
       category: value.category || '',
       tags: value.tags || [],
-
-      // User tracking
       createdBy: req.user._id,
       createdByDetails: {
         name: req.user.name,
@@ -132,31 +120,30 @@ const createAdmitCard = async (req, res) => {
       }
     };
 
-    console.log('Creating admit card with data:', JSON.stringify(admitCardData, null, 2));
+    console.log('Creating result with data:', JSON.stringify(resultData, null, 2));
 
-    const admitCard = new AdmitCard(admitCardData);
-    await admitCard.save();
+    const result = new Result(resultData);
+    await result.save();
 
     return res.status(201).json({
       success: true,
-      message: 'Admit card created successfully',
-      data: admitCard
+      message: 'Result created successfully',
+      data: result
     });
   } catch (error) {
-    console.error('Create admit card error:', error);
+    console.error('Create result error:', error);
     return res.status(500).json({
       success: false,
-      message: 'Failed to create admit card',
+      message: 'Failed to create result',
       error: error.message
     });
   }
 };
 
-// Get All Admit Cards with Filters
-const getAllAdmitCards = async (req, res) => {
+// Get All Results with Filters
+const getAllResults = async (req, res) => {
   try {
-    // Validate filter parameters
-    const { error, value } = admitCardFilterValidation.validate(req.query);
+    const { error, value } = resultFilterValidation.validate(req.query);
     if (error) {
       return res.status(400).json({
         success: false,
@@ -168,7 +155,8 @@ const getAllAdmitCards = async (req, res) => {
     const {
       type,
       status,
-      admitCardStatus,
+      resultStatus,
+      resultType,
       category,
       tags,
       createdBy,
@@ -190,14 +178,15 @@ const getAllAdmitCards = async (req, res) => {
     } else if (req.user.role === 'admin') {
       // Admin can see all
     } else {
-      // For other roles, only show verified admit cards
+      // For other roles, only show verified results
       filter.status = 'verified';
-      filter.admitCardStatus = 'active';
+      filter.resultStatus = 'active';
     }
 
     if (type) filter.type = type;
     if (status) filter.status = status;
-    if (admitCardStatus) filter.admitCardStatus = admitCardStatus;
+    if (resultStatus) filter.resultStatus = resultStatus;
+    if (resultType) filter.resultType = resultType;
     if (category) filter.category = category;
     if (createdBy) filter.createdBy = createdBy;
 
@@ -216,9 +205,9 @@ const getAllAdmitCards = async (req, res) => {
     // Search functionality
     if (search) {
       filter.$or = [
-        { postDetails: { $regex: search, $options: 'i' } },
         { linkMenuField: { $regex: search, $options: 'i' } },
         { postTypeDetails: { $regex: search, $options: 'i' } },
+        { examName: { $regex: search, $options: 'i' } },
         { 'createdByDetails.name': { $regex: search, $options: 'i' } },
         { category: { $regex: search, $options: 'i' } }
       ];
@@ -231,9 +220,9 @@ const getAllAdmitCards = async (req, res) => {
     // Pagination
     const skip = (page - 1) * limit;
 
-    // Fetch admit cards
-    const [admitCards, total] = await Promise.all([
-      AdmitCard.find(filter)
+    // Fetch results
+    const [results, total] = await Promise.all([
+      Result.find(filter)
         .populate('referenceId')
         .populate('createdBy', 'name email role')
         .populate('verifiedBy', 'name email role')
@@ -241,7 +230,7 @@ const getAllAdmitCards = async (req, res) => {
         .skip(skip)
         .limit(parseInt(limit))
         .lean(),
-      AdmitCard.countDocuments(filter)
+      Result.countDocuments(filter)
     ]);
 
     // Calculate pagination info
@@ -251,7 +240,7 @@ const getAllAdmitCards = async (req, res) => {
 
     return res.status(200).json({
       success: true,
-      data: admitCards,
+      data: results,
       pagination: {
         total,
         page: parseInt(page),
@@ -262,97 +251,96 @@ const getAllAdmitCards = async (req, res) => {
       }
     });
   } catch (error) {
-    console.error('Get all admit cards error:', error);
+    console.error('Get all results error:', error);
     return res.status(500).json({
       success: false,
-      message: 'Failed to fetch admit cards',
+      message: 'Failed to fetch results',
       error: error.message
     });
   }
 };
 
-// Get Admit Card by ID
-const getAdmitCardById = async (req, res) => {
+// Get Result by ID
+const getResultById = async (req, res) => {
   try {
     const { id } = req.params;
 
     if (!mongoose.Types.ObjectId.isValid(id)) {
       return res.status(400).json({
         success: false,
-        message: 'Invalid admit card ID format'
+        message: 'Invalid result ID format'
       });
     }
 
-    const admitCard = await AdmitCard.findById(id)
+    const result = await Result.findById(id)
       .populate('referenceId')
       .populate('createdBy', 'name email role')
       .populate('verifiedBy', 'name email role')
       .lean();
 
-    if (!admitCard) {
+    if (!result) {
       return res.status(404).json({
         success: false,
-        message: 'Admit card not found'
+        message: 'Result not found'
       });
     }
 
     // Check permissions
-    if (req.user.role !== 'admin' && admitCard.createdBy.toString() !== req.user._id.toString()) {
-      if (admitCard.status !== 'verified') {
+    if (req.user.role !== 'admin' && result.createdBy.toString() !== req.user._id.toString()) {
+      if (result.status !== 'verified') {
         return res.status(403).json({
           success: false,
-          message: 'You do not have permission to view this admit card'
+          message: 'You do not have permission to view this result'
         });
       }
     }
 
     return res.status(200).json({
       success: true,
-      data: admitCard
+      data: result
     });
   } catch (error) {
-    console.error('Get admit card by ID error:', error);
+    console.error('Get result by ID error:', error);
     return res.status(500).json({
       success: false,
-      message: 'Failed to fetch admit card',
+      message: 'Failed to fetch result',
       error: error.message
     });
   }
 };
 
-// Update Admit Card
-const updateAdmitCard = async (req, res) => {
+// Update Result
+const updateResult = async (req, res) => {
   try {
     const { id } = req.params;
 
     if (!mongoose.Types.ObjectId.isValid(id)) {
       return res.status(400).json({
         success: false,
-        message: 'Invalid admit card ID format'
+        message: 'Invalid result ID format'
       });
     }
 
-    // Find admit card
-    const admitCard = await AdmitCard.findById(id);
-    if (!admitCard) {
+    const result = await Result.findById(id);
+    if (!result) {
       return res.status(404).json({
         success: false,
-        message: 'Admit card not found'
+        message: 'Result not found'
       });
     }
 
     // Check permissions
-    if (admitCard.createdBy.toString() !== req.user._id.toString() && req.user.role !== 'admin') {
+    if (result.createdBy.toString() !== req.user._id.toString() && req.user.role !== 'admin') {
       return res.status(403).json({
         success: false,
-        message: 'You do not have permission to update this admit card'
+        message: 'You do not have permission to update this result'
       });
     }
 
-    console.log('Updating admit card with data:', JSON.stringify(req.body, null, 2));
+    console.log('Updating result with data:', JSON.stringify(req.body, null, 2));
 
     // Validate update data
-    const { error, value } = updateAdmitCardValidation.validate(req.body, { abortEarly: false });
+    const { error, value } = updateResultValidation.validate(req.body, { abortEarly: false });
     if (error) {
       console.log('Validation errors:', error.details);
       return res.status(400).json({
@@ -365,7 +353,7 @@ const updateAdmitCard = async (req, res) => {
       });
     }
 
-    // Non-admin cannot update status (except maybe to 'pending')
+    // Non-admin cannot update status
     if (req.user.role !== 'admin' && value.status && value.status !== 'pending') {
       return res.status(403).json({
         success: false,
@@ -421,8 +409,8 @@ const updateAdmitCard = async (req, res) => {
       }
     }
 
-    // Update admit card with dynamic content support
-    const updatedAdmitCard = await AdmitCard.findByIdAndUpdate(
+    // Update result
+    const updatedResult = await Result.findByIdAndUpdate(
       id,
       { ...value },
       { new: true, runValidators: true }
@@ -431,21 +419,21 @@ const updateAdmitCard = async (req, res) => {
       .populate('createdBy', 'name email role')
       .populate('verifiedBy', 'name email role');
 
-    console.log('Admit card updated with dynamic content:', {
-      hasDynamicContent: updatedAdmitCard.dynamicContent?.length > 0,
-      hasContentSections: updatedAdmitCard.contentSections?.length > 0
+    console.log('Result updated with dynamic content:', {
+      hasDynamicContent: updatedResult.dynamicContent?.length > 0,
+      hasContentSections: updatedResult.contentSections?.length > 0
     });
 
     return res.status(200).json({
       success: true,
-      message: 'Admit card updated successfully',
-      data: updatedAdmitCard
+      message: 'Result updated successfully',
+      data: updatedResult
     });
   } catch (error) {
-    console.error('Update admit card error:', error);
+    console.error('Update result error:', error);
     return res.status(500).json({
       success: false,
-      message: 'Failed to update admit card',
+      message: 'Failed to update result',
       error: error.message
     });
   }
@@ -459,16 +447,15 @@ const updateStatus = async (req, res) => {
     if (!mongoose.Types.ObjectId.isValid(id)) {
       return res.status(400).json({
         success: false,
-        message: 'Invalid admit card ID format'
+        message: 'Invalid result ID format'
       });
     }
 
-    // Find admit card
-    const admitCard = await AdmitCard.findById(id);
-    if (!admitCard) {
+    const result = await Result.findById(id);
+    if (!result) {
       return res.status(404).json({
         success: false,
-        message: 'Admit card not found'
+        message: 'Result not found'
       });
     }
 
@@ -476,7 +463,7 @@ const updateStatus = async (req, res) => {
     if (req.user.role !== 'admin') {
       return res.status(403).json({
         success: false,
-        message: 'Only admin can update admit card status'
+        message: 'Only admin can update result status'
       });
     }
 
@@ -511,8 +498,8 @@ const updateStatus = async (req, res) => {
       updateData.rejectionReason = null;
     }
 
-    // Update admit card status
-    const updatedAdmitCard = await AdmitCard.findByIdAndUpdate(
+    // Update result status
+    const updatedResult = await Result.findByIdAndUpdate(
       id,
       updateData,
       { new: true, runValidators: true }
@@ -523,8 +510,8 @@ const updateStatus = async (req, res) => {
 
     return res.status(200).json({
       success: true,
-      message: `Admit card status updated to ${value.status}`,
-      data: updatedAdmitCard
+      message: `Result status updated to ${value.status}`,
+      data: updatedResult
     });
   } catch (error) {
     console.error('Update status error:', error);
@@ -536,54 +523,52 @@ const updateStatus = async (req, res) => {
   }
 };
 
-// Delete Admit Card
-const deleteAdmitCard = async (req, res) => {
+// Delete Result
+const deleteResult = async (req, res) => {
   try {
     const { id } = req.params;
 
     if (!mongoose.Types.ObjectId.isValid(id)) {
       return res.status(400).json({
         success: false,
-        message: 'Invalid admit card ID format'
+        message: 'Invalid result ID format'
       });
     }
 
-    // Find admit card
-    const admitCard = await AdmitCard.findById(id);
-    if (!admitCard) {
+    const result = await Result.findById(id);
+    if (!result) {
       return res.status(404).json({
         success: false,
-        message: 'Admit card not found'
+        message: 'Result not found'
       });
     }
 
     // Check permissions
-    if (admitCard.createdBy.toString() !== req.user._id.toString() && req.user.role !== 'admin') {
+    if (result.createdBy.toString() !== req.user._id.toString() && req.user.role !== 'admin') {
       return res.status(403).json({
         success: false,
-        message: 'You do not have permission to delete this admit card'
+        message: 'You do not have permission to delete this result'
       });
     }
 
-    // Delete admit card
-    await AdmitCard.findByIdAndDelete(id);
+    await Result.findByIdAndDelete(id);
 
     return res.status(200).json({
       success: true,
-      message: 'Admit card deleted successfully'
+      message: 'Result deleted successfully'
     });
   } catch (error) {
-    console.error('Delete admit card error:', error);
+    console.error('Delete result error:', error);
     return res.status(500).json({
       success: false,
-      message: 'Failed to delete admit card',
+      message: 'Failed to delete result',
       error: error.message
     });
   }
 };
 
-// Get Admit Cards by Job ID
-const getAdmitCardsByJobId = async (req, res) => {
+// Get Results by Job ID
+const getResultsByJobId = async (req, res) => {
   try {
     const { jobId } = req.params;
 
@@ -594,11 +579,11 @@ const getAdmitCardsByJobId = async (req, res) => {
       });
     }
 
-    const admitCards = await AdmitCard.find({
+    const results = await Result.find({
       referenceId: jobId,
       referenceModel: 'Job',
       status: 'verified',
-      admitCardStatus: 'active'
+      resultStatus: 'active'
     })
       .populate('referenceId', 'title departmentName postName')
       .populate('createdBy', 'name email role')
@@ -607,23 +592,22 @@ const getAdmitCardsByJobId = async (req, res) => {
 
     return res.status(200).json({
       success: true,
-      data: admitCards
+      data: results
     });
   } catch (error) {
-    console.error('Get admit cards by job ID error:', error);
+    console.error('Get results by job ID error:', error);
     return res.status(500).json({
       success: false,
-      message: 'Failed to fetch admit cards',
+      message: 'Failed to fetch results',
       error: error.message
     });
   }
 };
 
-// Get Public Admit Cards
-const getPublicAdmitCards = async (req, res) => {
+// Get Public Results
+const getPublicResults = async (req, res) => {
   try {
-    // Validate filter parameters
-    const { error, value } = admitCardFilterValidation.validate(req.query);
+    const { error, value } = resultFilterValidation.validate(req.query);
     if (error) {
       return res.status(400).json({
         success: false,
@@ -634,6 +618,7 @@ const getPublicAdmitCards = async (req, res) => {
 
     const {
       type,
+      resultType,
       category,
       tags,
       search,
@@ -646,10 +631,11 @@ const getPublicAdmitCards = async (req, res) => {
     // Build filter for public access
     const filter = {
       status: 'verified',
-      admitCardStatus: 'active'
+      resultStatus: 'active'
     };
 
     if (type) filter.type = type;
+    if (resultType) filter.resultType = resultType;
     if (category) filter.category = category;
 
     // Tags filtering
@@ -660,9 +646,9 @@ const getPublicAdmitCards = async (req, res) => {
     // Search functionality
     if (search) {
       filter.$or = [
-        { postDetails: { $regex: search, $options: 'i' } },
         { linkMenuField: { $regex: search, $options: 'i' } },
         { postTypeDetails: { $regex: search, $options: 'i' } },
+        { examName: { $regex: search, $options: 'i' } },
         { category: { $regex: search, $options: 'i' } }
       ];
     }
@@ -674,16 +660,16 @@ const getPublicAdmitCards = async (req, res) => {
     // Pagination
     const skip = (page - 1) * limit;
 
-    // Fetch public admit cards
-    const [admitCards, total] = await Promise.all([
-      AdmitCard.find(filter)
+    // Fetch public results
+    const [results, total] = await Promise.all([
+      Result.find(filter)
         .populate('referenceId', 'title departmentName postName')
         .select('-createdByDetails -verifiedByDetails -rejectionReason -__v')
         .sort(sort)
         .skip(skip)
         .limit(parseInt(limit))
         .lean(),
-      AdmitCard.countDocuments(filter)
+      Result.countDocuments(filter)
     ]);
 
     // Calculate pagination info
@@ -693,7 +679,7 @@ const getPublicAdmitCards = async (req, res) => {
 
     return res.status(200).json({
       success: true,
-      data: admitCards,
+      data: results,
       pagination: {
         total,
         page: parseInt(page),
@@ -704,10 +690,10 @@ const getPublicAdmitCards = async (req, res) => {
       }
     });
   } catch (error) {
-    console.error('Get public admit cards error:', error);
+    console.error('Get public results error:', error);
     return res.status(500).json({
       success: false,
-      message: 'Failed to fetch admit cards',
+      message: 'Failed to fetch results',
       error: error.message
     });
   }
@@ -734,7 +720,7 @@ const getAvailableReferences = async (req, res) => {
           .sort({ 'importantDates.startDate': -1 })
           .limit(50)
           .lean();
-        
+
         // Format response
         references = references.map(job => ({
           ...job,
@@ -846,13 +832,13 @@ const getAvailableReferences = async (req, res) => {
 };
 
 module.exports = {
-  createAdmitCard,
-  getAllAdmitCards,
-  getAdmitCardById,
-  updateAdmitCard,
-  deleteAdmitCard,
+  createResult,
+  getAllResults,
+  getResultById,
+  updateResult,
+  deleteResult,
   updateStatus,
-  getAdmitCardsByJobId,
-  getPublicAdmitCards,
+  getResultsByJobId,
+  getPublicResults,
   getAvailableReferences
 };

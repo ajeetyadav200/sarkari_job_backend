@@ -1,11 +1,7 @@
-
-
-
 const mongoose = require('mongoose');
 const { dynamicContentItemSchema, contentSectionSchema } = require('../common/dynamicContentSchema');
 
-
-const admitCardSchema = new mongoose.Schema(
+const resultSchema = new mongoose.Schema(
   {
     type: {
       type: String,
@@ -46,7 +42,7 @@ const admitCardSchema = new mongoose.Schema(
     },
 
     // ========== DYNAMIC CONTENT SECTION ==========
-    // Use this for admit card specific content like exam centers, instructions, etc.
+    // Use this for result specific content like merit lists, cut-off marks, toppers, etc.
 
     // Simple text description
     description: {
@@ -57,15 +53,15 @@ const admitCardSchema = new mongoose.Schema(
 
     // Dynamic flexible content (type + value structure)
     // Examples:
-    // - Exam center list: { type: 'table', value: {...} }
-    // - Important instructions: { type: 'list', value: [...] }
-    // - Time table: { type: 'table', value: {...} }
+    // - Merit list: { type: 'table', value: {...} }
+    // - Cut-off marks: { type: 'table', value: {...} }
+    // - Toppers list: { type: 'list', value: [...] }
     dynamicContent: {
       type: [dynamicContentItemSchema],
       default: []
     },
 
-    // Organized sections (for complex admit cards)
+    // Organized sections (for complex results)
     contentSections: {
       type: [contentSectionSchema],
       default: []
@@ -82,16 +78,26 @@ const admitCardSchema = new mongoose.Schema(
       default: []
     },
 
+    // ========== RESULT SPECIFIC FIELDS ==========
 
+    resultType: {
+      type: String,
+      enum: ["Final", "Provisional", "MeritList", "CutOff", "AnswerKey", "ScoreCard", "Other"],
+      required: true,
+      default: "Final",
+    },
 
-  
+    examName: {
+      type: String,
+      trim: true,
+    },
 
     publishDate: {
       type: Date,
       default: Date.now,
     },
 
-    lastDate: {
+    resultDate: {
       type: Date,
     },
 
@@ -101,7 +107,7 @@ const admitCardSchema = new mongoose.Schema(
       default: "pending",
     },
 
-    admitCardStatus: {
+    resultStatus: {
       type: String,
       enum: ["active", "inactive"],
       required: true,
@@ -109,7 +115,7 @@ const admitCardSchema = new mongoose.Schema(
     },
 
     // -------------------------------
-    // USER WHO CREATED THE ADMIT CARD
+    // USER WHO CREATED THE RESULT
     // -------------------------------
     createdBy: {
       type: mongoose.Schema.Types.ObjectId,
@@ -126,7 +132,7 @@ const admitCardSchema = new mongoose.Schema(
     },
 
     // -------------------------------
-    // USER WHO VERIFIED THE ADMIT CARD
+    // USER WHO VERIFIED THE RESULT
     // -------------------------------
     verifiedBy: {
       type: mongoose.Schema.Types.ObjectId,
@@ -167,4 +173,4 @@ const admitCardSchema = new mongoose.Schema(
   }
 );
 
-module.exports = mongoose.model("AdmitCard", admitCardSchema);
+module.exports = mongoose.model("Result", resultSchema);

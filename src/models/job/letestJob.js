@@ -3,6 +3,7 @@
 
 const mongoose = require('mongoose');
 const validator = require('validator');
+const { dynamicContentItemSchema, contentSectionSchema } = require('../common/dynamicContentSchema');
 
 // Enums based on images
 const jobStatusEnum = {
@@ -285,7 +286,45 @@ const jobSchema = new mongoose.Schema({
       default: ''
     }
   },
-  
+
+  // ========== DYNAMIC CONTENT SECTION ==========
+  // Use this for job-specific requirements like physical standards, selection process, etc.
+
+  // Simple text description
+  description: {
+    type: String,
+    trim: true,
+    default: ''
+  },
+
+  // Dynamic flexible content (type + value structure)
+  dynamicContent: {
+    type: [dynamicContentItemSchema],
+    default: []
+  },
+
+  // Organized sections (for complex jobs with multiple sections)
+  contentSections: {
+    type: [contentSectionSchema],
+    default: []
+  },
+
+  // Quick arrays for common requirements
+  selectionProcess: {
+    type: [String],
+    default: []
+  },
+
+  documentsRequired: {
+    type: [String],
+    default: []
+  },
+
+  importantInstructions: {
+    type: [String],
+    default: []
+  },
+
   // ========== Status and Approval ==========
   status: {
     type: String,

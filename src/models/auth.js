@@ -184,7 +184,10 @@ userSchema.methods.getJWT = function() {
         { 
             id: this._id, 
             role: this.role,
-            email: this.email
+            email: this.email,
+            firstName : this.firstName,
+            lastName:this.lastName
+            
         },
         process.env.JWT_SECRET,
         { expiresIn: process.env.JWT_EXPIRES_IN || "7d" }

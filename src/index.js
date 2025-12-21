@@ -9,7 +9,8 @@ const { connection_database } = require('./config/database');
 // Import routes
 const authRoutes = require('./router/route');
 const jobRoutes = require('./router/jobRoutes');
-const admitCardRoutes = require('./router/admitCardRoutes')
+const admitCardRoutes = require('./router/admitCardRoutes');
+const resultRoutes = require('./router/resultRoutes');
 
 // PORT
 const PORT = process.env.PORT || 5173;
@@ -48,6 +49,7 @@ app.use((req, res, next) => {
 app.use('/api/auth', authRoutes);
 app.use('/api/jobs', jobRoutes);
 app.use('/api/admit-cards', admitCardRoutes);
+app.use('/api/results', resultRoutes);
 
 
 // Health check route (add this back)

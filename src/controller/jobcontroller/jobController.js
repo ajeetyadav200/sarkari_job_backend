@@ -9,39 +9,85 @@ class JobController {
   // Create Job
   static async createJob(req, res) {
     try {
+      console.log('Incoming job data:', JSON.stringify(req.body, null, 2));
+
       const { isValid, data, errors } = JobValidator.validateJobData(req.body);
-      
+
       if (!isValid) {
+        console.log('Validation errors:', errors);
         return res.status(400).json({
           success: false,
           message: 'Validation failed',
           errors
         });
       }
-      
+
       // Create creator snapshot
       const creatorSnapshot = {
         userId: req.user._id,
-        name: req.user.name,
+        firstName: req.user.firstName || req.user.name || '',
+        lastName: req.user.lastName || '',
         email: req.user.email,
         phone: req.user.phone || '',
         role: req.user.role
       };
-      
-      const job = new Job({
-        ...data,
+
+      // Prepare job data with dynamic content support
+      const jobData = {
+        // Basic required fields
+        departmentName: data.departmentName,
+        postName: data.postName,
+        modeOfForm: data.modeOfForm,
+        typeOfForm: data.typeOfForm,
+        paymentMode: data.paymentMode,
+        totalPost: data.totalPost,
+        eligibilityEducational1: data.eligibilityEducational1,
+
+        // Optional basic fields
+        eligibilityEducational2: data.eligibilityEducational2 || '',
+        helpEmailId: data.helpEmailId || '',
+        helpCareNo: data.helpCareNo || '',
+        officialWebsite: data.officialWebsite || '',
+        showInPortal: data.showInPortal !== undefined ? data.showInPortal : true,
+
+        // Category data
+        categoryPosts: data.categoryPosts || {},
+        categoryFees: data.categoryFees || {},
+
+        // Important dates
+        importantDates: data.importantDates || {},
+
+        // Other details
+        otherDetails: data.otherDetails || {},
+
+        // ========== DYNAMIC CONTENT FIELDS ==========
+        description: data.description || '',
+        dynamicContent: data.dynamicContent || [],
+        contentSections: data.contentSections || [],
+        selectionProcess: data.selectionProcess || [],
+        documentsRequired: data.documentsRequired || [],
+        importantInstructions: data.importantInstructions || [],
+
+        // Status
         createdBy: creatorSnapshot,
         status: jobStatusEnum.PENDING
+      };
+
+      console.log('Creating job with dynamic content:', {
+        hasDynamicContent: jobData.dynamicContent.length > 0,
+        hasContentSections: jobData.contentSections.length > 0,
+        hasSelectionProcess: jobData.selectionProcess.length > 0
       });
-      
+
+      const job = new Job(jobData);
       await job.save();
-      
+
       return res.status(201).json({
         success: true,
         message: 'Job created successfully',
         data: job
       });
-      
+
     } catch (error) {
       console.error('Create job error:', error);
       return res.status(500).json({
@@ -232,24 +278,32 @@ class JobController {
         });
       }
       
+      console.log('Updating job with data:', JSON.stringify(req.body, null, 2));
+
       // Validate update data
       const { isValid, data, errors } = JobValidator.validateJobData(req.body);
-      
+
       if (!isValid) {
+        console.log('Validation errors:', errors);
         return res.status(400).json({
           success: false,
           message: 'Validation failed',
           errors
         });
       }
-      
-      // Update job fields
+
+      // Update job fields including dynamic content
       Object.keys(data).forEach(key => {
         if (key !== 'status') { // Prevent status update via regular update
           job[key] = data[key];
         }
       });
-      
+
+      console.log('Job updated with dynamic content:', {
+        hasDynamicContent: job.dynamicContent?.length > 0,
+        hasContentSections: job.contentSections?.length > 0
+      });
+
       await job.save();
       
       return res.status(200).json({

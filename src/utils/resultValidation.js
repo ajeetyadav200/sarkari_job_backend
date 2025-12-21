@@ -1,6 +1,6 @@
 const Joi = require('joi');
 
-const createAdmitCardValidation = Joi.object({
+const createResultValidation = Joi.object({
   type: Joi.string().valid('Job', 'Admission', 'LatestNotice', 'Other').required()
     .messages({
       'any.only': 'Type must be one of: Job, Admission, LatestNotice, Other',
@@ -37,14 +37,14 @@ const createAdmitCardValidation = Joi.object({
     .messages({
       'boolean.base': 'Also show link must be a boolean'
     }),
- 
+
   publishDate: Joi.date().optional().allow(null)
     .messages({
       'date.base': 'Publish date must be a valid date'
     }),
-  lastDate: Joi.date().optional().allow(null)
+  resultDate: Joi.date().optional().allow(null)
     .messages({
-      'date.base': 'Last date must be a valid date'
+      'date.base': 'Result date must be a valid date'
     }),
   category: Joi.string().trim().max(100).optional().allow('', null)
     .messages({
@@ -54,9 +54,9 @@ const createAdmitCardValidation = Joi.object({
     .messages({
       'any.only': 'Status must be one of: pending, verified, rejected, onHold'
     }),
-  admitCardStatus: Joi.string().valid('active', 'inactive').optional().default('active')
+  resultStatus: Joi.string().valid('active', 'inactive').optional().default('active')
     .messages({
-      'any.only': 'Admit card status must be either active or inactive'
+      'any.only': 'Result status must be either active or inactive'
     }),
   createdByDetails: Joi.object({
     name: Joi.string().required(),
@@ -103,24 +103,20 @@ const createAdmitCardValidation = Joi.object({
   importantInstructions: Joi.array().items(Joi.string()).optional(),
   documentsRequired: Joi.array().items(Joi.string()).optional(),
 
-  examCenters: Joi.array().items(Joi.object({
-    centerName: Joi.string(),
-    centerCode: Joi.string(),
-    address: Joi.string(),
-    city: Joi.string(),
-    state: Joi.string()
-  })).optional(),
+  // Result specific fields
+  resultType: Joi.string().valid('Final', 'Provisional', 'MeritList', 'CutOff', 'AnswerKey', 'ScoreCard', 'Other').optional().default('Final')
+    .messages({
+      'any.only': 'Result type must be one of: Final, Provisional, MeritList, CutOff, AnswerKey, ScoreCard, Other'
+    }),
 
-  downloadLinks: Joi.array().items(Joi.object({
-    title: Joi.string().required(),
-    url: Joi.string().required(),
-    fileType: Joi.string(),
-    description: Joi.string(),
-    isActive: Joi.boolean()
-  })).optional()
+  examName: Joi.string().trim().optional().allow('', null)
+    .messages({
+      'string.base': 'Exam name must be a string'
+    })
 
 }).unknown(true);
-const updateAdmitCardValidation = Joi.object({
+
+const updateResultValidation = Joi.object({
   type: Joi.string().valid('Job', 'Admission', 'LatestNotice', 'Other')
     .messages({
       'any.only': 'Type must be one of: Job, Admission, LatestNotice, Other'
@@ -150,22 +146,54 @@ const updateAdmitCardValidation = Joi.object({
     .messages({
       'boolean.base': 'Also show link must be a boolean'
     }),
-  postDetails: Joi.string().min(10).max(5000)
+  description: Joi.string().trim().allow('', null).optional(),
+
+  dynamicContent: Joi.array().items(Joi.object({
+    type: Joi.string().required(),
+    value: Joi.any(),
+    values: Joi.array().items(Joi.any()),
+    label: Joi.string().allow(''),
+    description: Joi.string().allow(''),
+    metadata: Joi.object(),
+    required: Joi.boolean(),
+    order: Joi.number(),
+    isVisible: Joi.boolean(),
+    section: Joi.string()
+  })).optional(),
+
+  contentSections: Joi.array().items(Joi.object({
+    sectionId: Joi.string().required(),
+    sectionTitle: Joi.string().required(),
+    sectionDescription: Joi.string().allow(''),
+    order: Joi.number(),
+    isCollapsible: Joi.boolean(),
+    isExpandedByDefault: Joi.boolean(),
+    icon: Joi.string().allow(''),
+    content: Joi.array()
+  })).optional(),
+
+  importantInstructions: Joi.array().items(Joi.string()).optional(),
+  documentsRequired: Joi.array().items(Joi.string()).optional(),
+
+  resultType: Joi.string().valid('Final', 'Provisional', 'MeritList', 'CutOff', 'AnswerKey', 'ScoreCard', 'Other')
     .messages({
-      'string.min': 'Post details must be at least 10 characters',
-      'string.max': 'Post details cannot exceed 5000 characters'
+      'any.only': 'Result type must be one of: Final, Provisional, MeritList, CutOff, AnswerKey, ScoreCard, Other'
     }),
-  lastDate: Joi.date()
+  examName: Joi.string().trim()
     .messages({
-      'date.base': 'Last date must be a valid date'
+      'string.base': 'Exam name must be a string'
+    }),
+  resultDate: Joi.date()
+    .messages({
+      'date.base': 'Result date must be a valid date'
     }),
   status: Joi.string().valid('pending', 'verified', 'rejected', 'onHold')
     .messages({
       'any.only': 'Status must be one of: pending, verified, rejected, onHold'
     }),
-  admitCardStatus: Joi.string().valid('active', 'inactive')
+  resultStatus: Joi.string().valid('active', 'inactive')
     .messages({
-      'any.only': 'Admit card status must be either active or inactive'
+      'any.only': 'Result status must be either active or inactive'
     }),
   tags: Joi.array().items(Joi.string().trim())
     .messages({
@@ -200,10 +228,11 @@ const updateStatusValidation = Joi.object({
   })
 });
 
-const admitCardFilterValidation = Joi.object({
+const resultFilterValidation = Joi.object({
   type: Joi.string().valid('Job', 'Admission', 'LatestNotice', 'Other'),
   status: Joi.string().valid('pending', 'verified', 'rejected', 'onHold'),
-  admitCardStatus: Joi.string().valid('active', 'inactive'),
+  resultStatus: Joi.string().valid('active', 'inactive'),
+  resultType: Joi.string().valid('Final', 'Provisional', 'MeritList', 'CutOff', 'AnswerKey', 'ScoreCard', 'Other'),
   category: Joi.string().max(100),
   tags: Joi.array().items(Joi.string()),
   createdBy: Joi.string().hex().length(24)
@@ -211,18 +240,18 @@ const admitCardFilterValidation = Joi.object({
       'string.hex': 'Created By must be a valid hex string',
       'string.length': 'Created By must be 24 characters'
     }),
-  startDate: Joi.date(),  // Changed from dateRange
-  endDate: Joi.date(),    // Changed from dateRange
+  startDate: Joi.date(),
+  endDate: Joi.date(),
   search: Joi.string().max(200),
   page: Joi.number().integer().min(1).default(1),
   limit: Joi.number().integer().min(1).max(100).default(10),
-  sortBy: Joi.string().valid('publishDate', 'lastDate', 'createdAt', 'updatedAt').default('publishDate'),
+  sortBy: Joi.string().valid('publishDate', 'resultDate', 'createdAt', 'updatedAt').default('publishDate'),
   sortOrder: Joi.string().valid('asc', 'desc').default('desc')
 });
 
 module.exports = {
-  createAdmitCardValidation,
-  updateAdmitCardValidation,
+  createResultValidation,
+  updateResultValidation,
   updateStatusValidation,
-  admitCardFilterValidation
+  resultFilterValidation
 };

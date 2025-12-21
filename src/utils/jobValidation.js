@@ -267,9 +267,58 @@ class JobValidator {
       
       // ========== Other Details ==========
       validated.otherDetails = this.validateOtherDetails(data.otherDetails || {});
-      
+
+      // ========== DYNAMIC CONTENT FIELDS ==========
+      // Description (optional)
+      if (data.description) {
+        validated.description = typeof data.description === 'string' ? data.description.trim() : '';
+      } else {
+        validated.description = '';
+      }
+
+      // Selection Process (array of strings)
+      if (Array.isArray(data.selectionProcess)) {
+        validated.selectionProcess = data.selectionProcess.filter(item =>
+          typeof item === 'string' && item.trim().length > 0
+        );
+      } else {
+        validated.selectionProcess = [];
+      }
+
+      // Documents Required (array of strings)
+      if (Array.isArray(data.documentsRequired)) {
+        validated.documentsRequired = data.documentsRequired.filter(item =>
+          typeof item === 'string' && item.trim().length > 0
+        );
+      } else {
+        validated.documentsRequired = [];
+      }
+
+      // Important Instructions (array of strings)
+      if (Array.isArray(data.importantInstructions)) {
+        validated.importantInstructions = data.importantInstructions.filter(item =>
+          typeof item === 'string' && item.trim().length > 0
+        );
+      } else {
+        validated.importantInstructions = [];
+      }
+
+      // Dynamic Content (array of objects)
+      if (Array.isArray(data.dynamicContent)) {
+        validated.dynamicContent = data.dynamicContent;
+      } else {
+        validated.dynamicContent = [];
+      }
+
+      // Content Sections (array of objects)
+      if (Array.isArray(data.contentSections)) {
+        validated.contentSections = data.contentSections;
+      } else {
+        validated.contentSections = [];
+      }
+
       return { isValid: true, data: validated, errors: null };
-      
+
     } catch (error) {
       errors.push(error.message);
       return { isValid: false, data: null, errors };
