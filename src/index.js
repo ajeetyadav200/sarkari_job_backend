@@ -172,62 +172,124 @@
 
 
 
+// const express = require("express");
+// const app = express();
+// require('dotenv').config();
+// const cors = require('cors');
+// const cookieParser = require('cookie-parser');
+// const { connection_database } = require('./config/database');
+
+// // Routes
+// const authRoutes = require('./router/route');
+// const jobRoutes = require('./router/jobRoutes');
+// const admitCardRoutes = require('./router/admitCardRoutes');
+// const resultRoutes = require('./router/resultRoutes');
+
+// // PORT
+// const PORT = process.env.PORT; // MUST use environment port
+
+// // CORS
+// const corsOptions = {
+//     origin: process.env.FRONTEND_URL,
+//     credentials: true,
+//     optionsSuccessStatus: 200
+// };
+// app.use(cors(corsOptions));
+
+// // Middleware
+// app.use(express.json());
+// app.use(express.urlencoded({ extended: true }));
+// app.use(cookieParser());
+
+// // Routes
+// app.use('/api/auth', authRoutes);
+// app.use('/api/jobs', jobRoutes);
+// app.use('/api/admit-cards', admitCardRoutes);
+// app.use('/api/results', resultRoutes);
+
+// // Health check
+// app.get('/health', (req, res) => {
+//     res.json({ success: true, message: 'Server is healthy' });
+// });
+
+// // Root
+// app.get('/', (req, res) => {
+//     res.json({ success: true, message: 'Backend running 🚀' });
+// });
+
+// // Connect DB & start server
+// (async () => {
+//     try {
+//         await connection_database();
+//         console.log("✅ Database connected successfully");
+
+//         app.listen(PORT, () => {
+//             console.log(`🚀 Server running on port ${PORT}`);
+//         });
+//     } catch (err) {
+//         console.error("❌ DB connection failed:", err.message);
+//         process.exit(1);
+//     }
+// })();
+
+
+
+
 const express = require("express");
 const app = express();
-require('dotenv').config();
-const cors = require('cors');
-const cookieParser = require('cookie-parser');
-const { connection_database } = require('./config/database');
+require("dotenv").config();
+const cors = require("cors");
+const cookieParser = require("cookie-parser");
+
+// ✅ FIXED PATHS
+const { connection_database } = require("./config/database");
 
 // Routes
-const authRoutes = require('./router/route');
-const jobRoutes = require('./router/jobRoutes');
-const admitCardRoutes = require('./router/admitCardRoutes');
-const resultRoutes = require('./router/resultRoutes');
+const authRoutes = require("./router/route");
+const jobRoutes = require("./router/jobRoutes");
+const admitCardRoutes = require("./router/admitCardRoutes");
+const resultRoutes = require("./router/resultRoutes");
 
-// PORT
-const PORT = process.env.PORT; // MUST use environment port
+// PORT (Hostinger requirement)
+const PORT = process.env.PORT;
 
 // CORS
-const corsOptions = {
-    origin: process.env.FRONTEND_URL,
-    credentials: true,
-    optionsSuccessStatus: 200
-};
-app.use(cors(corsOptions));
+app.use(cors({
+  origin: process.env.FRONTEND_URL,
+  credentials: true
+}));
 
-// Middleware
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 app.use(cookieParser());
 
 // Routes
-app.use('/api/auth', authRoutes);
-app.use('/api/jobs', jobRoutes);
-app.use('/api/admit-cards', admitCardRoutes);
-app.use('/api/results', resultRoutes);
+app.use("/api/auth", authRoutes);
+app.use("/api/jobs", jobRoutes);
+app.use("/api/admit-cards", admitCardRoutes);
+app.use("/api/results", resultRoutes);
 
 // Health check
-app.get('/health', (req, res) => {
-    res.json({ success: true, message: 'Server is healthy' });
+app.get("/health", (req, res) => {
+  res.json({ success: true, message: "Server is healthy" });
 });
 
 // Root
-app.get('/', (req, res) => {
-    res.json({ success: true, message: 'Backend running 🚀' });
+app.get("/", (req, res) => {
+  res.json({ success: true, message: "Backend running 🚀" });
 });
 
-// Connect DB & start server
+// Start server
 (async () => {
-    try {
-        await connection_database();
-        console.log("✅ Database connected successfully");
+  try {
+    await connection_database();
+    console.log("✅ Database connected");
 
-        app.listen(PORT, () => {
-            console.log(`🚀 Server running on port ${PORT}`);
-        });
-    } catch (err) {
-        console.error("❌ DB connection failed:", err.message);
-        process.exit(1);
-    }
+    app.listen(PORT, () => {
+      console.log(`🚀 Server running on port ${PORT}`);
+    });
+  } catch (err) {
+    console.error("❌ DB connection failed:", err.message);
+    process.exit(1);
+  }
 })();
