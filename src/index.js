@@ -138,22 +138,22 @@ app.use((err, req, res, next) => {
 });
 
 // Connect DB & start server
-connection_database()
-    .then(() => {
-        console.log("✅ Database connected successfully");
+if (require.main === module) {
+    connection_database()
+        .then(() => {
+            console.log("✅ Database connected successfully");
 
-        app.listen(PORT, () => {
-            console.log(`🚀 Server running: http://localhost:${PORT}`);
-            console.log(`🌐 Environment: ${process.env.NODE_ENV || 'development'}`);
-            console.log(`❤️  Health check: http://localhost:${PORT}/health`);
-            
-           
+            app.listen(PORT, () => {
+                console.log(`🚀 Server running: http://localhost:${PORT}`);
+                console.log(`🌐 Environment: ${process.env.NODE_ENV || 'development'}`);
+                console.log(`❤️  Health check: http://localhost:${PORT}/health`);
+            });
+        })
+        .catch(err => {
+            console.error("❌ DB connection failed:", err.message);
+            process.exit(1);
         });
-    })
-    .catch(err => {
-        console.error("❌ DB connection failed:", err.message);
-        process.exit(1);
-    });
+}
 
 // Graceful shutdown
 process.on('SIGINT', () => {
