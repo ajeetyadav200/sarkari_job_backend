@@ -17,6 +17,9 @@ const PORT = process.env.PORT || 7777;
 
 // CORS CONFIG
 const allowedOrigins = [
+    'https://naukaristore.org',
+     'https://naukaristore.com',
+    'https://www.naukaristore.org',
     process.env.FRONTEND_URL_PRODUCTION,
     process.env.FRONTEND_URL_DEVELOPMENT,
     'http://localhost:5173'
@@ -30,11 +33,14 @@ const corsOptions = {
         if (allowedOrigins.indexOf(origin) !== -1) {
             callback(null, true);
         } else {
+            console.log('CORS blocked origin:', origin);
             callback(new Error('Not allowed by CORS'));
         }
     },
     credentials: true,
-    optionsSuccessStatus: 200
+    optionsSuccessStatus: 200,
+    methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
+    allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With']
 };
 
 
