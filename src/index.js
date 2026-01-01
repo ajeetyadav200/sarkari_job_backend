@@ -21,6 +21,7 @@ const allowedOrigins = [
      'https://naukaristore.com',
     'https://www.naukaristore.org',
     process.env.FRONTEND_URL_PRODUCTION,
+     process.env.FRONTEND_URL_PRODUCTION2,
     process.env.FRONTEND_URL_DEVELOPMENT,
     'http://localhost:5173'
 ].filter(Boolean); // Remove undefined values
