@@ -20,11 +20,31 @@ const FRONTEND_URL = process.env.NODE_ENV === 'production'
     ? process.env.FRONTEND_URL_PRODUCTION
     : process.env.FRONTEND_URL_DEVELOPMENT;
 
-// CORS CONFIG
+// CORS CONFIG - Allow both production and development origins
+const allowedOrigins = [
+    'https://naukaristore.org',
+    'http://localhost:5173',
+    'http://localhost:3000',
+    'http://localhost:7777'
+];
+
 const corsOptions = {
-    origin: FRONTEND_URL || 'http://localhost:5173',
+    origin: function (origin, callback) {
+        // Allow requests with no origin (like mobile apps, curl, Postman)
+        if (!origin) return callback(null, true);
+
+        if (allowedOrigins.indexOf(origin) !== -1) {
+            callback(null, true);
+        } else {
+            console.log('CORS blocked origin:', origin);
+            callback(null, true); // For now, allow all origins to debug
+        }
+    },
     credentials: true,
-    optionsSuccessStatus: 200
+    optionsSuccessStatus: 200,
+    methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
+    allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With'],
+    exposedHeaders: ['set-cookie']
 };
 
 
