@@ -26,12 +26,9 @@ try {
 const createAdmitCard = async (req, res) => {
   try {
     // Log incoming request body for debugging
-    ('Incoming admit card data:', JSON.stringify(req.body, null, 2));
-
     // Validate request body
     const { error, value } = createAdmitCardValidation.validate(req.body, { abortEarly: false });
     if (error) {
-      ('Validation errors:', error.details);
       return res.status(400).json({
         success: false,
         message: 'Validation failed',
@@ -131,9 +128,6 @@ const createAdmitCard = async (req, res) => {
         userId: req.user._id
       }
     };
-
-    ('Creating admit card with data:', JSON.stringify(admitCardData, null, 2));
-
     const admitCard = new AdmitCard(admitCardData);
     await admitCard.save();
 
@@ -348,13 +342,9 @@ const updateAdmitCard = async (req, res) => {
         message: 'You do not have permission to update this admit card'
       });
     }
-
-    ('Updating admit card with data:', JSON.stringify(req.body, null, 2));
-
     // Validate update data
     const { error, value } = updateAdmitCardValidation.validate(req.body, { abortEarly: false });
     if (error) {
-      ('Validation errors:', error.details);
       return res.status(400).json({
         success: false,
         message: 'Validation failed',
@@ -430,12 +420,6 @@ const updateAdmitCard = async (req, res) => {
       .populate('referenceId')
       .populate('createdBy', 'name email role')
       .populate('verifiedBy', 'name email role');
-
-    ('Admit card updated with dynamic content:', {
-      hasDynamicContent: updatedAdmitCard.dynamicContent?.length > 0,
-      hasContentSections: updatedAdmitCard.contentSections?.length > 0
-    });
-
     return res.status(200).json({
       success: true,
       message: 'Admit card updated successfully',

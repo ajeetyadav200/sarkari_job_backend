@@ -19,7 +19,7 @@ const sendTokenResponse = (user, statusCode, res, message) => {
         ),
         httpOnly: true,
         secure: process.env.NODE_ENV === 'production',
-        sameSite: 'strict'
+        sameSite: process.env.NODE_ENV === 'production' ? 'none' : 'lax'
     };
 
     res.status(statusCode)
@@ -389,7 +389,9 @@ exports.logout = async (req, res) => {
     try {
         res.cookie('token', 'none', {
             expires: new Date(Date.now() + 10 * 1000), // 10 seconds
-            httpOnly: true
+            httpOnly: true,
+            secure: process.env.NODE_ENV === 'production',
+            sameSite: process.env.NODE_ENV === 'production' ? 'none' : 'lax'
         });
 
         return res.status(200).json({
