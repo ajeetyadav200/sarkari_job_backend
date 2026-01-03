@@ -148,12 +148,12 @@ app.use((err, req, res, next) => {
 if (require.main === module) {
     connection_database()
         .then(() => {
-            ("✅ Database connected successfully");
+            console.log("✅ Database connected successfully");
 
             app.listen(PORT, () => {
-                (`🚀 Server running: http://localhost:${PORT}`);
-                (`🌐 Environment: ${process.env.NODE_ENV || 'development'}`);
-                (`❤️  Health check: http://localhost:${PORT}/health`);
+                console.log(`🚀 Server running: http://localhost:${PORT}`);
+               console.log (`🌐 Environment: ${process.env.NODE_ENV || 'development'}`);
+               console.log (`❤️  Health check: http://localhost:${PORT}/health`);
             });
         })
         .catch(err => {
@@ -164,22 +164,22 @@ if (require.main === module) {
 
 // Graceful shutdown
 process.on('SIGINT', () => {
-    ("\n👋 Received SIGINT. Shutting down gracefully...");
+    console.log("\n👋 Received SIGINT. Shutting down gracefully...");
     process.exit(0);
 });
 
 process.on('SIGTERM', () => {
-    ("\n👋 Received SIGTERM. Shutting down gracefully...");
+   console.log("\n👋 Received SIGTERM. Shutting down gracefully...");
     process.exit(0);
 });
 
 process.on('unhandledRejection', (err, promise) => {
-    ('❌ Unhandled Promise Rejection:', err.message);
+    console.log('❌ Unhandled Promise Rejection:', err.message);
     process.exit(1);
 });
 
 process.on('uncaughtException', (err) => {
-    ('❌ Uncaught Exception:', err.message);
+    console.log('❌ Uncaught Exception:', err.message);
     process.exit(1);
 });
 
