@@ -61,7 +61,7 @@ const getClientIP = (req) => {
 // @access  Public (Only for initial admin setup)
 exports.adminSignup = async (req, res) => {
     try {
-        console.log("Admin signup request received");
+       
         const { firstName, lastName, email, password } = req.body;
 
         // Basic presence check
@@ -72,7 +72,7 @@ exports.adminSignup = async (req, res) => {
             });
         }
 
-        console.log("Checking admin count...");
+     
 
         // Enforce max 2 admins
         const adminCount = await User.countDocuments({ role: "admin" });
@@ -83,7 +83,7 @@ exports.adminSignup = async (req, res) => {
             });
         }
 
-        console.log("Checking existing user...");
+     
 
         // Normalize email and check existing user
         const normalizedEmail = String(email).toLowerCase().trim();
@@ -95,7 +95,7 @@ exports.adminSignup = async (req, res) => {
             });
         }
 
-        console.log("Creating admin user...");
+        ("Creating admin user...");
 
         // Create admin user
         const admin = await User.create({
@@ -106,13 +106,13 @@ exports.adminSignup = async (req, res) => {
             role: "admin"
         });
 
-        console.log("Admin user created, updating last login...");
+        ("Admin user created, updating last login...");
 
         // Update last login and save
         admin.lastLogin = new Date();
         await admin.save();
 
-        console.log("Sending token response...");
+        ("Sending token response...");
 
         // Send token + response
         return sendTokenResponse(admin, 201, res, "Admin account created successfully");
@@ -152,7 +152,7 @@ exports.adminSignup = async (req, res) => {
 // @access  Public
 exports.login = async (req, res) => {
     try {
-        console.log("Login request received");
+        ("Login request received");
         
         // Ensure body exists
         if (!req.body || Object.keys(req.body).length === 0) {
@@ -173,7 +173,7 @@ exports.login = async (req, res) => {
         }
 
         const ipAddress = getClientIP(req);
-        console.log("IP Address:", ipAddress);
+        ("IP Address:", ipAddress);
 
         // Check if IP is locked first
         const isIPLocked = await IPAttempt.isIPLocked(ipAddress);
@@ -186,7 +186,7 @@ exports.login = async (req, res) => {
 
         // Find user with password
         const user = await User.findOne({ email: email.toLowerCase() }).select('+password');
-        console.log("User found:", user ? "Yes" : "No");
+        ("User found:", user ? "Yes" : "No");
         
         if (!user) {
             // Case 1: Email doesn't exist - increment IP attempt
@@ -227,7 +227,7 @@ exports.login = async (req, res) => {
                 user.lastLogin = new Date();
                 await user.save();
                 
-                console.log("Login successful for user:", user.email);
+                ("Login successful for user:", user.email);
                 return sendTokenResponse(user, 200, res, "Login successful");
             }
         } catch (error) {

@@ -9,12 +9,12 @@ class JobController {
   // Create Job
   static async createJob(req, res) {
     try {
-      console.log('Incoming job data:', JSON.stringify(req.body, null, 2));
+      ('Incoming job data:', JSON.stringify(req.body, null, 2));
 
       const { isValid, data, errors } = JobValidator.validateJobData(req.body);
 
       if (!isValid) {
-        console.log('Validation errors:', errors);
+        ('Validation errors:', errors);
         return res.status(400).json({
           success: false,
           message: 'Validation failed',
@@ -73,7 +73,7 @@ class JobController {
         status: jobStatusEnum.PENDING
       };
 
-      console.log('Creating job with dynamic content:', {
+      ('Creating job with dynamic content:', {
         hasDynamicContent: jobData.dynamicContent.length > 0,
         hasContentSections: jobData.contentSections.length > 0,
         hasSelectionProcess: jobData.selectionProcess.length > 0
@@ -115,7 +115,7 @@ class JobController {
         registrationOpen
       } = req.query;
       
-      console.log('Query params:', req.query);
+      ('Query params:', req.query);
       
       // Build filter
       const filter = {};
@@ -163,8 +163,8 @@ class JobController {
       const sortOrder = order === 'asc' ? 1 : -1;
       const sortField = sortBy || 'createdAt';
       
-      console.log('Filter:', filter);
-      console.log('Skip:', skip, 'Limit:', limit);
+      ('Filter:', filter);
+      ('Skip:', skip, 'Limit:', limit);
       
       // Execute query
       const [jobs, total] = await Promise.all([
@@ -196,7 +196,7 @@ class JobController {
         }
       };
       
-      console.log('Response count:', jobs.length, 'Total:', total);
+      ('Response count:', jobs.length, 'Total:', total);
       
       return res.status(200).json(response);
       
@@ -278,13 +278,13 @@ class JobController {
         });
       }
       
-      console.log('Updating job with data:', JSON.stringify(req.body, null, 2));
+      ('Updating job with data:', JSON.stringify(req.body, null, 2));
 
       // Validate update data
       const { isValid, data, errors } = JobValidator.validateJobData(req.body);
 
       if (!isValid) {
-        console.log('Validation errors:', errors);
+        ('Validation errors:', errors);
         return res.status(400).json({
           success: false,
           message: 'Validation failed',
@@ -299,7 +299,7 @@ class JobController {
         }
       });
 
-      console.log('Job updated with dynamic content:', {
+      ('Job updated with dynamic content:', {
         hasDynamicContent: job.dynamicContent?.length > 0,
         hasContentSections: job.contentSections?.length > 0
       });

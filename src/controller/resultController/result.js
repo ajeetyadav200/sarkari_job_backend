@@ -24,12 +24,12 @@ try {
 // Create Result
 const createResult = async (req, res) => {
   try {
-    console.log('Incoming result data:', JSON.stringify(req.body, null, 2));
+    ('Incoming result data:', JSON.stringify(req.body, null, 2));
 
     // Validate request body
     const { error, value } = createResultValidation.validate(req.body, { abortEarly: false });
     if (error) {
-      console.log('Validation errors:', error.details);
+      ('Validation errors:', error.details);
       return res.status(400).json({
         success: false,
         message: 'Validation failed',
@@ -120,7 +120,7 @@ const createResult = async (req, res) => {
       }
     };
 
-    console.log('Creating result with data:', JSON.stringify(resultData, null, 2));
+    ('Creating result with data:', JSON.stringify(resultData, null, 2));
 
     const result = new Result(resultData);
     await result.save();
@@ -337,12 +337,12 @@ const updateResult = async (req, res) => {
       });
     }
 
-    console.log('Updating result with data:', JSON.stringify(req.body, null, 2));
+    ('Updating result with data:', JSON.stringify(req.body, null, 2));
 
     // Validate update data
     const { error, value } = updateResultValidation.validate(req.body, { abortEarly: false });
     if (error) {
-      console.log('Validation errors:', error.details);
+      ('Validation errors:', error.details);
       return res.status(400).json({
         success: false,
         message: 'Validation failed',
@@ -419,7 +419,7 @@ const updateResult = async (req, res) => {
       .populate('createdBy', 'name email role')
       .populate('verifiedBy', 'name email role');
 
-    console.log('Result updated with dynamic content:', {
+    ('Result updated with dynamic content:', {
       hasDynamicContent: updatedResult.dynamicContent?.length > 0,
       hasContentSections: updatedResult.contentSections?.length > 0
     });

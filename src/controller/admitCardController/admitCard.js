@@ -26,12 +26,12 @@ try {
 const createAdmitCard = async (req, res) => {
   try {
     // Log incoming request body for debugging
-    console.log('Incoming admit card data:', JSON.stringify(req.body, null, 2));
+    ('Incoming admit card data:', JSON.stringify(req.body, null, 2));
 
     // Validate request body
     const { error, value } = createAdmitCardValidation.validate(req.body, { abortEarly: false });
     if (error) {
-      console.log('Validation errors:', error.details);
+      ('Validation errors:', error.details);
       return res.status(400).json({
         success: false,
         message: 'Validation failed',
@@ -132,7 +132,7 @@ const createAdmitCard = async (req, res) => {
       }
     };
 
-    console.log('Creating admit card with data:', JSON.stringify(admitCardData, null, 2));
+    ('Creating admit card with data:', JSON.stringify(admitCardData, null, 2));
 
     const admitCard = new AdmitCard(admitCardData);
     await admitCard.save();
@@ -349,12 +349,12 @@ const updateAdmitCard = async (req, res) => {
       });
     }
 
-    console.log('Updating admit card with data:', JSON.stringify(req.body, null, 2));
+    ('Updating admit card with data:', JSON.stringify(req.body, null, 2));
 
     // Validate update data
     const { error, value } = updateAdmitCardValidation.validate(req.body, { abortEarly: false });
     if (error) {
-      console.log('Validation errors:', error.details);
+      ('Validation errors:', error.details);
       return res.status(400).json({
         success: false,
         message: 'Validation failed',
@@ -431,7 +431,7 @@ const updateAdmitCard = async (req, res) => {
       .populate('createdBy', 'name email role')
       .populate('verifiedBy', 'name email role');
 
-    console.log('Admit card updated with dynamic content:', {
+    ('Admit card updated with dynamic content:', {
       hasDynamicContent: updatedAdmitCard.dynamicContent?.length > 0,
       hasContentSections: updatedAdmitCard.contentSections?.length > 0
     });

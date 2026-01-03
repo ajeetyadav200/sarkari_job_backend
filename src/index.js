@@ -34,7 +34,7 @@ const corsOptions = {
         if (allowedOrigins.indexOf(origin) !== -1) {
             callback(null, true);
         } else {
-            console.log('CORS blocked origin:', origin);
+            // ('CORS blocked origin:', origin);
             callback(new Error('Not allowed by CORS'));
         }
     },
@@ -148,12 +148,12 @@ app.use((err, req, res, next) => {
 if (require.main === module) {
     connection_database()
         .then(() => {
-            console.log("✅ Database connected successfully");
+            ("✅ Database connected successfully");
 
             app.listen(PORT, () => {
-                console.log(`🚀 Server running: http://localhost:${PORT}`);
-                console.log(`🌐 Environment: ${process.env.NODE_ENV || 'development'}`);
-                console.log(`❤️  Health check: http://localhost:${PORT}/health`);
+                (`🚀 Server running: http://localhost:${PORT}`);
+                (`🌐 Environment: ${process.env.NODE_ENV || 'development'}`);
+                (`❤️  Health check: http://localhost:${PORT}/health`);
             });
         })
         .catch(err => {
@@ -164,22 +164,22 @@ if (require.main === module) {
 
 // Graceful shutdown
 process.on('SIGINT', () => {
-    console.log("\n👋 Received SIGINT. Shutting down gracefully...");
+    ("\n👋 Received SIGINT. Shutting down gracefully...");
     process.exit(0);
 });
 
 process.on('SIGTERM', () => {
-    console.log("\n👋 Received SIGTERM. Shutting down gracefully...");
+    ("\n👋 Received SIGTERM. Shutting down gracefully...");
     process.exit(0);
 });
 
 process.on('unhandledRejection', (err, promise) => {
-    console.log('❌ Unhandled Promise Rejection:', err.message);
+    ('❌ Unhandled Promise Rejection:', err.message);
     process.exit(1);
 });
 
 process.on('uncaughtException', (err) => {
-    console.log('❌ Uncaught Exception:', err.message);
+    ('❌ Uncaught Exception:', err.message);
     process.exit(1);
 });
 

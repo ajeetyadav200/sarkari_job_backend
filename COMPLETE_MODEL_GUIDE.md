@@ -622,9 +622,9 @@ const job = await Job.create({
   }
 });
 
-console.log(`Job created: ${job._id}`);
-console.log(`Registration ${job.isRegistrationOpen ? 'is open' : 'is closed'}`);
-console.log(`Remaining days: ${job.remainingDays}`);
+(`Job created: ${job._id}`);
+(`Registration ${job.isRegistrationOpen ? 'is open' : 'is closed'}`);
+(`Remaining days: ${job.remainingDays}`);
 ```
 
 ### Example 2: Create Admit Card for the Job
@@ -732,8 +732,8 @@ const admitCard = await AdmitCard.create({
   }
 });
 
-console.log(`Admit Card created: ${admitCard._id}`);
-console.log(`Waiting for admin verification...`);
+(`Admit Card created: ${admitCard._id}`);
+(`Waiting for admin verification...`);
 ```
 
 ### Example 3: Admin Verifies Admit Card
@@ -757,9 +757,9 @@ const updated = await AdmitCard.findByIdAndUpdate(
   { new: true }
 );
 
-console.log(`Admit Card verified by ${adminUser.firstName} ${adminUser.lastName}`);
-console.log(`Status: ${updated.status}`);
-console.log(`Now visible to public!`);
+(`Admit Card verified by ${adminUser.firstName} ${adminUser.lastName}`);
+(`Status: ${updated.status}`);
+(`Now visible to public!`);
 ```
 
 ---
@@ -774,7 +774,7 @@ const jobs = await response.json();
 
 // Display job with dynamic content
 jobs.data.forEach(job => {
-  console.log(`${job.departmentName} - ${job.postName}`);
+  (`${job.departmentName} - ${job.postName}`);
 
   // Render dynamic content
   job.dynamicContent.forEach(item => {
