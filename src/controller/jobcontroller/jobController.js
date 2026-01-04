@@ -109,7 +109,7 @@ class JobController {
         modeOfForm,
         paymentMode,
         page = 1,
-        limit = 10,
+        limit = 20,
         sortBy = 'createdAt',
         order = 'desc',
         registrationOpen
@@ -326,8 +326,8 @@ class JobController {
   static async changeJobStatus(req, res) {
     try {
       const { id } = req.params;
-      const { status, remark } = req.body;
-      
+      const { status, remark, rejectionReason } = req.body;
+
       // Check admin permission
       if (req.user.role !== 'admin') {
         return res.status(403).json({
@@ -335,7 +335,7 @@ class JobController {
           message: 'Only admin can change job status'
         });
       }
-      
+
       // Validate status
       if (!Object.values(jobStatusEnum).includes(status)) {
         return res.status(400).json({
@@ -343,21 +343,28 @@ class JobController {
           message: `Invalid status. Must be one of: ${Object.values(jobStatusEnum).join(', ')}`
         });
       }
-      
+
       const job = await Job.findById(id);
-      
+
       if (!job) {
         return res.status(404).json({
           success: false,
           message: 'Job not found'
         });
       }
-      
+
       // Update status
       job.status = status;
       job.statusRemark = remark || '';
       job.statusChangedAt = new Date();
-      
+
+      // Add rejection reason if status is rejected
+      if (status === jobStatusEnum.REJECTED) {
+        job.rejectionReason = rejectionReason || '';
+      } else {
+        job.rejectionReason = '';
+      }
+
       // Add approver snapshot if verified
       if (status === jobStatusEnum.VERIFIED) {
         job.approvedBy = {
@@ -368,15 +375,15 @@ class JobController {
           role: req.user.role
         };
       }
-      
+
       await job.save();
-      
+
       return res.status(200).json({
         success: true,
         message: `Job status updated to ${status}`,
         data: job
       });
-      
+
     } catch (error) {
       console.error('Change job status error:', error);
       return res.status(500).json({
@@ -429,10 +436,10 @@ class JobController {
   // Get My Jobs
   static async getMyJobs(req, res) {
     try {
-      const { 
-        status, 
-        page = 1, 
-        limit = 10 
+      const {
+        status,
+        page = 1,
+        limit = 20
       } = req.query;
       
       const filter = {
@@ -609,13 +616,13 @@ class JobController {
   // Search Jobs (Public endpoint)
   static async searchJobs(req, res) {
     try {
-      const { 
-        keyword, 
-        department, 
-        type, 
+      const {
+        keyword,
+        department,
+        type,
         mode,
-        page = 1, 
-        limit = 10 
+        page = 1,
+        limit = 20
       } = req.query;
       
       const filter = {
@@ -681,6 +688,118 @@ class JobController {
       return res.status(500).json({
         success: false,
         message: 'Failed to search jobs',
+        error: error.message
+      });
+    }
+  }
+
+  // Get All Jobs List with Infinite Scrolling and Date Search
+  static async getAllJobsList(req, res) {
+    try {
+      const {
+        page = 1,
+        limit = 20,
+        year,
+        month,
+        date,
+        keyword,
+        isLatestJob,
+        sortBy = 'createdAt',
+        order = 'desc'
+      } = req.query;
+
+      const filter = {
+        status: jobStatusEnum.VERIFIED,
+        showInPortal: true
+      };
+
+      // Search by year, month, date
+      if (year || month || date) {
+        const dateFilter = {};
+
+        if (year) {
+          const yearNum = parseInt(year);
+          dateFilter.$gte = new Date(yearNum, 0, 1);
+          dateFilter.$lt = new Date(yearNum + 1, 0, 1);
+        }
+
+        if (month && year) {
+          const yearNum = parseInt(year);
+          const monthNum = parseInt(month) - 1; // month is 0-indexed
+          dateFilter.$gte = new Date(yearNum, monthNum, 1);
+          dateFilter.$lt = new Date(yearNum, monthNum + 1, 1);
+        }
+
+        if (date && month && year) {
+          const yearNum = parseInt(year);
+          const monthNum = parseInt(month) - 1;
+          const dateNum = parseInt(date);
+          dateFilter.$gte = new Date(yearNum, monthNum, dateNum);
+          dateFilter.$lt = new Date(yearNum, monthNum, dateNum + 1);
+        }
+
+        if (Object.keys(dateFilter).length > 0) {
+          filter['importantDates.startDate'] = dateFilter;
+        }
+      }
+
+      // Search by keyword
+      if (keyword && keyword !== '') {
+        filter.$or = [
+          { departmentName: { $regex: keyword, $options: 'i' } },
+          { postName: { $regex: keyword, $options: 'i' } },
+          { eligibilityEducational1: { $regex: keyword, $options: 'i' } }
+        ];
+      }
+
+      // Filter by latest jobs
+      if (isLatestJob === 'true') {
+        filter.isLatestJob = true;
+      }
+
+      // Pagination
+      const skip = (parseInt(page) - 1) * parseInt(limit);
+      const sortOrder = order === 'asc' ? 1 : -1;
+      const sortField = sortBy || 'createdAt';
+
+      // Execute query
+      const [jobs, total] = await Promise.all([
+        Job.find(filter)
+          .sort({ [sortField]: sortOrder })
+          .skip(skip)
+          .limit(parseInt(limit))
+          .lean(),
+        Job.countDocuments(filter)
+      ]);
+
+      // Add virtuals
+      jobs.forEach(job => {
+        job.isRegistrationOpen = new Date(job.importantDates.startDate) <= new Date() &&
+                                new Date() <= new Date(job.importantDates.registrationLastDate);
+        job.remainingDays = job.importantDates.registrationLastDate ?
+          Math.ceil((new Date(job.importantDates.registrationLastDate) - new Date()) / (1000 * 60 * 60 * 24)) :
+          null;
+      });
+
+      const hasMore = skip + jobs.length < total;
+
+      return res.status(200).json({
+        success: true,
+        data: jobs,
+        pagination: {
+          currentPage: parseInt(page),
+          totalPages: Math.ceil(total / parseInt(limit)),
+          totalJobs: total,
+          limit: parseInt(limit),
+          hasMore
+        }
+      });
+
+    } catch (error) {
+      console.error('Get all jobs list error:', error);
+      return res.status(500).json({
+        success: false,
+        message: 'Failed to fetch jobs list',
         error: error.message
       });
     }

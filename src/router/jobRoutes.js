@@ -7,6 +7,7 @@ const router = express.Router();
 
 // Public routes (No authentication required)
 router.get('/', JobController.getAllJobs);
+router.get('/list', JobController.getAllJobsList);
 router.get('/search', JobController.searchJobs);
 router.get('/open', JobController.getOpenJobs);
 router.get('/:id', JobController.getJobById);

@@ -52,7 +52,19 @@ app.use(cors(corsOptions));
 // 2. Body parsing middleware SECOND
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
+app.use(express.text({ type: 'text/plain' }));
 
+// Parse text/plain as JSON (for frontend CORS issues)
+app.use((req, res, next) => {
+    if (req.headers['content-type'] === 'text/plain' && typeof req.body === 'string') {
+        try {
+            req.body = JSON.parse(req.body);
+        } catch (e) {
+            // Leave as is if parsing fails
+        }
+    }
+    next();
+});
 
 // 3. Cookie parser THIRD
 app.use(cookieParser());

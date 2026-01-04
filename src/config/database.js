@@ -2,7 +2,7 @@ const mongoose = require('mongoose');
 
 // Disable buffering - fail fast instead of buffering operations
 mongoose.set('bufferCommands', false);
-
+console.log(process.env.DATABASE_URL)
 // Increase buffer timeout as a safety net (60 seconds)
 mongoose.set('bufferTimeoutMS', 60000);
 

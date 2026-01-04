@@ -337,7 +337,18 @@ const jobSchema = new mongoose.Schema({
     trim: true,
     default: ''
   },
-  
+
+  rejectionReason: {
+    type: String,
+    trim: true,
+    default: ''
+  },
+
+  isLatestJob: {
+    type: Boolean,
+    default: false
+  },
+
   // Creator Information (Snapshot)
   createdBy: {
     type: userSnapshotSchema,
