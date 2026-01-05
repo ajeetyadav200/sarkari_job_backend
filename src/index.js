@@ -32,24 +32,43 @@ const allowedOrigins = [
     'http://localhost:3000'
 ].filter(Boolean); // Remove undefined values
 
+// Function to check if origin is allowed
+const isOriginAllowed = (origin) => {
+    if (!origin) return true; // Allow requests with no origin
+
+    // Check exact match in allowed origins
+    if (allowedOrigins.includes(origin)) return true;
+
+    // Check if origin matches naukaristore domains (with or without www)
+    const domainPattern = /^https?:\/\/(www\.)?naukaristore\.(org|com)$/i;
+    if (domainPattern.test(origin)) return true;
+
+    // Allow localhost for development
+    const localhostPattern = /^http:\/\/localhost(:\d+)?$/;
+    if (localhostPattern.test(origin)) return true;
+
+    return false;
+};
+
 const corsOptions = {
     origin: function (origin, callback) {
-        // Allow requests with no origin (like mobile apps, curl, or Postman)
-        if (!origin) return callback(null, true);
+        console.log('📨 Incoming request from origin:', origin || 'NO ORIGIN');
 
-        if (allowedOrigins.indexOf(origin) !== -1) {
+        if (isOriginAllowed(origin)) {
+            console.log('✅ CORS: Origin allowed');
             callback(null, true);
         } else {
-            // Log blocked origin for debugging (helps identify missing domains)
-            console.warn('⚠️ CORS blocked origin:', origin);
-            console.warn('Allowed origins:', allowedOrigins);
+            console.error('❌ CORS BLOCKED!');
+            console.error('   Blocked origin:', origin);
+            console.error('   Allowed origins:', allowedOrigins);
+            console.error('   Time:', new Date().toISOString());
             callback(new Error('Not allowed by CORS'));
         }
     },
     credentials: true,
     optionsSuccessStatus: 200,
     methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
-    allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With', 'Accept']
+    allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With', 'Accept', 'Origin']
 };
 
 
