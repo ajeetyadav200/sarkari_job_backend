@@ -291,8 +291,19 @@ const getAdmitCardById = async (req, res) => {
     }
 
     // Check permissions
-    if (req.user.role !== 'admin' && admitCard.createdBy.toString() !== req.user._id.toString()) {
-      if (admitCard.status !== 'verified') {
+    // Allow public access to verified admit cards
+    // Restrict access to non-verified admit cards (only creator or admin can view)
+    if (admitCard.status !== 'verified') {
+      // If user is not authenticated, deny access to non-verified admit cards
+      if (!req.user) {
+        return res.status(403).json({
+          success: false,
+          message: 'You do not have permission to view this admit card'
+        });
+      }
+
+      // If user is authenticated but not admin or creator, deny access
+      if (req.user.role !== 'admin' && admitCard.createdBy.toString() !== req.user._id.toString()) {
         return res.status(403).json({
           success: false,
           message: 'You do not have permission to view this admit card'
@@ -829,6 +840,104 @@ const getAvailableReferences = async (req, res) => {
   }
 };
 
+// Get All Admit Cards List with Infinite Scrolling and Date Search
+const getAllAdmitCardsList = async (req, res) => {
+  try {
+    const {
+      page = 1,
+      limit = 20,
+      year,
+      month,
+      date,
+      keyword,
+      sortBy = 'publishDate',
+      order = 'desc'
+    } = req.query;
+
+    const filter = {
+      status: 'verified',
+      admitCardStatus: 'active'
+    };
+
+    // Search by year, month, date
+    if (year || month || date) {
+      const dateFilter = {};
+
+      if (year) {
+        const yearNum = parseInt(year);
+        dateFilter.$gte = new Date(yearNum, 0, 1);
+        dateFilter.$lt = new Date(yearNum + 1, 0, 1);
+      }
+
+      if (month && year) {
+        const yearNum = parseInt(year);
+        const monthNum = parseInt(month) - 1; // month is 0-indexed
+        dateFilter.$gte = new Date(yearNum, monthNum, 1);
+        dateFilter.$lt = new Date(yearNum, monthNum + 1, 1);
+      }
+
+      if (date && month && year) {
+        const yearNum = parseInt(year);
+        const monthNum = parseInt(month) - 1;
+        const dateNum = parseInt(date);
+        dateFilter.$gte = new Date(yearNum, monthNum, dateNum);
+        dateFilter.$lt = new Date(yearNum, monthNum, dateNum + 1);
+      }
+
+      if (Object.keys(dateFilter).length > 0) {
+        filter['publishDate'] = dateFilter;
+      }
+    }
+
+    // Search by keyword
+    if (keyword && keyword !== '') {
+      filter.$or = [
+        { linkMenuField: { $regex: keyword, $options: 'i' } },
+        { postTypeDetails: { $regex: keyword, $options: 'i' } },
+        { category: { $regex: keyword, $options: 'i' } }
+      ];
+    }
+
+    // Pagination
+    const skip = (parseInt(page) - 1) * parseInt(limit);
+    const sortOrder = order === 'asc' ? 1 : -1;
+    const sortField = sortBy || 'publishDate';
+
+    // Execute query
+    const [admitCards, total] = await Promise.all([
+      AdmitCard.find(filter)
+        .populate('referenceId')
+        .sort({ [sortField]: sortOrder })
+        .skip(skip)
+        .limit(parseInt(limit))
+        .lean(),
+      AdmitCard.countDocuments(filter)
+    ]);
+
+    const hasMore = skip + admitCards.length < total;
+
+    return res.status(200).json({
+      success: true,
+      data: admitCards,
+      pagination: {
+        currentPage: parseInt(page),
+        totalPages: Math.ceil(total / parseInt(limit)),
+        total: total,
+        limit: parseInt(limit),
+        hasMore
+      }
+    });
+
+  } catch (error) {
+    console.error('Get all admit cards list error:', error);
+    return res.status(500).json({
+      success: false,
+      message: 'Failed to fetch admit cards list',
+      error: error.message
+    });
+  }
+};
+
 module.exports = {
   createAdmitCard,
   getAllAdmitCards,
@@ -838,5 +947,6 @@ module.exports = {
   updateStatus,
   getAdmitCardsByJobId,
   getPublicAdmitCards,
-  getAvailableReferences
+  getAvailableReferences,
+  getAllAdmitCardsList
 };

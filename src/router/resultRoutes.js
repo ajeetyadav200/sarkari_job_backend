@@ -8,7 +8,8 @@ const {
   updateStatus,
   getResultsByJobId,
   getPublicResults,
-  getAvailableReferences
+  getAvailableReferences,
+  getAllResultsList
 } = require('../controller/resultController/result.js');
 const { AuthUser, requireRole } = require('../middleware/authMiddleware.js');
 
@@ -16,7 +17,9 @@ const router = express.Router();
 
 // Public routes
 router.get('/public', getPublicResults);
+router.get('/list', getAllResultsList);
 router.get('/job/:jobId', getResultsByJobId);
+router.get('/:id', getResultById);
 
 // Protected routes (authenticated users)
 router.use(AuthUser);
@@ -29,9 +32,6 @@ router.post('/', requireRole('publisher', 'assistant', 'admin'), createResult);
 
 // Get all results with filters (role-based access)
 router.get('/', getAllResults);
-
-// Get single result
-router.get('/:id', getResultById);
 
 // Update result (creator or admin)
 router.put('/:id', updateResult);

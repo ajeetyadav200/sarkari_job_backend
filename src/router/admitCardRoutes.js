@@ -12,7 +12,8 @@ const {
   updateStatus,
   getAdmitCardsByJobId,
   getPublicAdmitCards,
-  getAvailableReferences
+  getAvailableReferences,
+  getAllAdmitCardsList
 } = require('../controller/admitCardController/admitCard.js');
 const { AuthUser, requireRole } = require('../middleware/authMiddleware.js');
 
@@ -20,7 +21,9 @@ const router = express.Router();
 
 // Public routes
 router.get('/public', getPublicAdmitCards);
+router.get('/list', getAllAdmitCardsList);
 router.get('/job/:jobId', getAdmitCardsByJobId);
+router.get('/:id', getAdmitCardById);
 
 // Protected routes (authenticated users)
 router.use(AuthUser);
@@ -33,9 +36,6 @@ router.post('/', requireRole('publisher', 'assistant', 'admin'), createAdmitCard
 
 // Get all admit cards with filters (role-based access)
 router.get('/', getAllAdmitCards);
-
-// Get single admit card
-router.get('/:id', getAdmitCardById);
 
 // Update admit card (creator or admin)
 router.put('/:id', updateAdmitCard);
