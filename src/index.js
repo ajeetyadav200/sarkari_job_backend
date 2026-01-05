@@ -18,30 +18,38 @@ const PORT = process.env.PORT || 7777;
 // CORS CONFIG
 const allowedOrigins = [
     'https://naukaristore.org',
-     'https://naukaristore.com',
+    'https://naukaristore.com',
     'https://www.naukaristore.org',
+    'https://www.naukaristore.com',
+    'http://naukaristore.org',
+    'http://naukaristore.com',
+    'http://www.naukaristore.org',
+    'http://www.naukaristore.com',
     process.env.FRONTEND_URL_PRODUCTION,
-     process.env.FRONTEND_URL_PRODUCTION2,
+    process.env.FRONTEND_URL_PRODUCTION2,
     process.env.FRONTEND_URL_DEVELOPMENT,
-    'http://localhost:5173'
+    'http://localhost:5173',
+    'http://localhost:3000'
 ].filter(Boolean); // Remove undefined values
 
 const corsOptions = {
     origin: function (origin, callback) {
-        // Allow requests with no origin (like mobile apps or curl)
+        // Allow requests with no origin (like mobile apps, curl, or Postman)
         if (!origin) return callback(null, true);
 
         if (allowedOrigins.indexOf(origin) !== -1) {
             callback(null, true);
         } else {
-            // ('CORS blocked origin:', origin);
+            // Log blocked origin for debugging (helps identify missing domains)
+            console.warn('⚠️ CORS blocked origin:', origin);
+            console.warn('Allowed origins:', allowedOrigins);
             callback(new Error('Not allowed by CORS'));
         }
     },
     credentials: true,
     optionsSuccessStatus: 200,
     methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
-    allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With']
+    allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With', 'Accept']
 };
 
 
