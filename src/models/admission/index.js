@@ -1,5 +1,6 @@
-const Admission = require('./admissionSchema');
+const { Admission, admissionStatusEnum } = require('./admissionSchema');
 
 module.exports = {
-  Admission
+  Admission,
+  admissionStatusEnum
 };
