@@ -5,6 +5,7 @@ require('dotenv').config();
 const cors = require('cors');
 const cookieParser = require('cookie-parser');
 const { connection_database } = require('./config/database');
+const { verifyCloudinaryConnection } = require('./config/cloudinary');
 
 // Import routes
 const authRoutes = require('./router/route');
@@ -12,6 +13,7 @@ const jobRoutes = require('./router/jobRoutes');
 const admitCardRoutes = require('./router/admitCardRoutes');
 const resultRoutes = require('./router/resultRoutes');
 const admissionRoutes = require('./router/admissionRoutes');
+const answerRoutes = require('./router/answerRoutes');
 
 // PORT
 const PORT = process.env.PORT || 7777;
@@ -113,6 +115,7 @@ app.use('/api/jobs', jobRoutes);
 app.use('/api/admit-cards', admitCardRoutes);
 app.use('/api/results', resultRoutes);
 app.use('/api/admissions', admissionRoutes);
+app.use('/api/answers', answerRoutes);
 
 
 // Health check route (add this back)
@@ -188,8 +191,11 @@ app.use((err, req, res, next) => {
 // Connect DB & start server
 if (require.main === module) {
     connection_database()
-        .then(() => {
+        .then(async () => {
             console.log("✅ Database connected successfully");
+
+            // Verify Cloudinary connection
+            await verifyCloudinaryConnection();
 
             app.listen(PORT, () => {
                 console.log(`🚀 Server running: http://localhost:${PORT}`);
