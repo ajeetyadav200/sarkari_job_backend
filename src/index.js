@@ -11,6 +11,7 @@ const authRoutes = require('./router/route');
 const jobRoutes = require('./router/jobRoutes');
 const admitCardRoutes = require('./router/admitCardRoutes');
 const resultRoutes = require('./router/resultRoutes');
+const admissionRoutes = require('./router/admissionRoutes');
 
 // PORT
 const PORT = process.env.PORT || 7777;
@@ -111,6 +112,7 @@ app.use('/api/auth', authRoutes);
 app.use('/api/jobs', jobRoutes);
 app.use('/api/admit-cards', admitCardRoutes);
 app.use('/api/results', resultRoutes);
+app.use('/api/admissions', admissionRoutes);
 
 
 // Health check route (add this back)
