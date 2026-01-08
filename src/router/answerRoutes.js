@@ -1,79 +1,46 @@
 const express = require('express');
-const AnswerController = require('../controller/answerController/answerController');
-const { AuthUser, requireRole } = require('../middleware/authMiddleware');
-const { uploadDynamicFiles, uploadSingleFile } = require('../middleware/uploadMiddleware');
+const {
+  createAnswer,
+  getAllAnswers,
+  getAnswerById,
+  updateAnswer,
+  deleteAnswer,
+  updateStatus,
+  getAnswersByJobId,
+  getPublicAnswers,
+  getAvailableReferences,
+  getAllAnswersList
+} = require('../controller/answerController/answerController.js');
+const { AuthUser, requireRole } = require('../middleware/authMiddleware.js');
+const { uploadDynamicFiles } = require('../middleware/uploadMiddleware.js');
 
 const router = express.Router();
 
-// ========== PUBLIC ROUTES (No authentication required) ==========
-router.get('/', AnswerController.getAllAnswers);
-router.get('/list', AnswerController.getAllAnswersList);
-router.get('/latest', AnswerController.getLatestAnswers);
-router.get('/search', AnswerController.searchAnswers);
-router.get('/:id', AnswerController.getAnswerById);
+// Public routes
+router.get('/public', getPublicAnswers);
+router.get('/list', getAllAnswersList);
+router.get('/job/:jobId', getAnswersByJobId);
+router.get('/:id', getAnswerById);
 
-// ========== PROTECTED ROUTES (All authenticated users) ==========
-router.get('/my/answers', AuthUser, AnswerController.getMyAnswers);
+// Protected routes (authenticated users)
+router.use(AuthUser);
 
-// ========== ROUTES FOR ASSISTANT, PUBLISHER, AND ADMIN ==========
-// Create answer with file uploads
-router.post(
-  '/',
-  AuthUser,
-  requireRole('assistant', 'publisher', 'admin'),
-  uploadDynamicFiles,
-  AnswerController.createAnswer
-);
+// Get available references for answer creation
+router.get('/references/available', getAvailableReferences);
 
-// Update answer with file uploads
-router.put(
-  '/:id',
-  AuthUser,
-  requireRole('assistant', 'publisher', 'admin'),
-  uploadDynamicFiles,
-  AnswerController.updateAnswer
-);
+// Create answer (publisher, assistant, admin)
+router.post('/', requireRole('publisher', 'assistant', 'admin'), uploadDynamicFiles, createAnswer);
 
-// Delete answer
-router.delete(
-  '/:id',
-  AuthUser,
-  requireRole('assistant', 'publisher', 'admin'),
-  AnswerController.deleteAnswer
-);
+// Get all answers with filters (role-based access)
+router.get('/', getAllAnswers);
 
-// Upload single file to existing answer
-router.post(
-  '/:id/upload',
-  AuthUser,
-  requireRole('assistant', 'publisher', 'admin'),
-  uploadSingleFile('file'),
-  AnswerController.uploadFileToAnswer
-);
+// Update answer (creator or admin)
+router.put('/:id', uploadDynamicFiles, updateAnswer);
 
-// Delete file from answer
-router.delete(
-  '/:id/files/:fileId',
-  AuthUser,
-  requireRole('assistant', 'publisher', 'admin'),
-  AnswerController.deleteFileFromAnswer
-);
+// Update status (admin only)
+router.patch('/:id/status', requireRole('admin'), updateStatus);
 
-// ========== ADMIN ONLY ROUTES ==========
-// Change answer status
-router.patch(
-  '/:id/status',
-  AuthUser,
-  requireRole('admin'),
-  AnswerController.changeAnswerStatus
-);
-
-// Get answer statistics
-router.get(
-  '/admin/stats',
-  AuthUser,
-  requireRole('admin'),
-  AnswerController.getAnswerStats
-);
+// Delete answer (creator or admin)
+router.delete('/:id', deleteAnswer);
 
 module.exports = router;

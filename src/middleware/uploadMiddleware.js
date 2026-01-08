@@ -72,6 +72,7 @@ const uploadDynamicFiles = upload.fields([
   { name: 'admitCardFile', maxCount: 1 },
   { name: 'answerKeyFile', maxCount: 1 },
   { name: 'resultFile', maxCount: 1 },
+  { name: 'otherFile', maxCount: 1 },
   { name: 'otherFiles', maxCount: 5 }
 ]);
 

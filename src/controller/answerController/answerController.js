@@ -1,912 +1,999 @@
-const { Answer, answerStatusEnum } = require('../../models/answer/answerSchema');
+const Answer = require('../../models/answer/answerSchema');
+const { Job } = require('../../models/job/letestJob');
 const { uploadToCloudinary, deleteFromCloudinary } = require('../../config/cloudinary');
-const { cleanupFiles, cleanupFileFields } = require('../../middleware/uploadMiddleware');
-const fs = require('fs');
-
-class AnswerController {
-  // ========== CREATE ANSWER ==========
-  static async createAnswer(req, res) {
-    try {
-      console.log('Creating answer with data:', JSON.stringify(req.body, null, 2));
-
-      // Create creator snapshot
-      const creatorSnapshot = {
-        userId: req.user._id,
-        firstName: req.user.firstName || req.user.name || '',
-        lastName: req.user.lastName || '',
-        email: req.user.email,
-        phone: req.user.phone || '',
-        role: req.user.role
-      };
-
-      // Prepare answer data
-      const answerData = {
-        ...req.body,
-        createdBy: creatorSnapshot,
-        status: answerStatusEnum.PENDING
-      };
-
-      // Handle file uploads if present
-      if (req.files) {
-        const uploadedFiles = [];
-
-        // Process each file field
-        for (const fieldName in req.files) {
-          const files = req.files[fieldName];
-
-          for (const file of files) {
-            try {
-              // Upload to Cloudinary
-              const uploadResult = await uploadToCloudinary(file.path, 'answer-keys');
-
-              // Get file type from extension
-              const fileType = file.mimetype.split('/')[1] || 'other';
-
-              const fileData = {
-                fileName: req.body[`${fieldName}_name`] || file.originalname,
-                fileUrl: uploadResult.url,
-                cloudinaryId: uploadResult.cloudinaryId,
-                fileType: fileType,
-                uploadedAt: new Date()
-              };
-
-              // Add to specific field if it matches known fields
-              if (['officialNotification', 'examDateNotice', 'syllabusFile', 'admitCardFile', 'answerKeyFile', 'resultFile'].includes(fieldName)) {
-                answerData[fieldName] = fileData;
-              }
-
-              // Also add to uploadedFiles array
-              uploadedFiles.push(fileData);
-
-              // Delete temporary file
-              fs.unlinkSync(file.path);
-            } catch (uploadError) {
-              console.error(`Error uploading file ${file.originalname}:`, uploadError);
-              // Continue with other files
-            }
-          }
-        }
-
-        if (uploadedFiles.length > 0) {
-          answerData.uploadedFiles = uploadedFiles;
-        }
-      }
-
-      // Create answer
-      const answer = new Answer(answerData);
-      await answer.save();
-
-      return res.status(201).json({
-        success: true,
-        message: 'Answer created successfully',
-        data: answer
-      });
-
-    } catch (error) {
-      console.error('Create answer error:', error);
-
-      // Cleanup uploaded files on error
-      if (req.files) {
-        cleanupFileFields(req.files);
-      }
-
-      return res.status(500).json({
-        success: false,
-        message: 'Failed to create answer',
-        error: error.message
-      });
-    }
-  }
-
-  // ========== GET ALL ANSWERS (PUBLIC) ==========
-  static async getAllAnswers(req, res) {
-    try {
-      const {
-        status,
-        examType,
-        category,
-        keyword,
-        page = 1,
-        limit = 20,
-        sortBy = 'createdAt',
-        order = 'desc'
-      } = req.query;
-
-      // Build filter
-      const filter = {};
-
-      // Apply status filter
-      if (status && status !== '') {
-        filter.status = status;
-      } else if (!req.user || req.user.role !== 'admin') {
-        // For non-admin users, show only verified answers
-        filter.status = answerStatusEnum.VERIFIED;
-        filter.showInPortal = true;
-      }
-
-      // Exam type filter
-      if (examType && examType !== '') {
-        filter.examType = examType;
-      }
-
-      // Category filter
-      if (category && category !== '') {
-        filter.category = category;
-      }
-
-      // Keyword search
-      if (keyword && keyword !== '') {
-        filter.$or = [
-          { title: { $regex: keyword, $options: 'i' } },
-          { organizationName: { $regex: keyword, $options: 'i' } },
-          { postName: { $regex: keyword, $options: 'i' } },
-          { examName: { $regex: keyword, $options: 'i' } }
-        ];
-      }
-
-      // Pagination
-      const skip = (parseInt(page) - 1) * parseInt(limit);
-      const sortOrder = order === 'asc' ? 1 : -1;
-      const sortField = sortBy || 'createdAt';
-
-      // Execute query
-      const [answers, total] = await Promise.all([
-        Answer.find(filter)
-          .sort({ [sortField]: sortOrder })
-          .skip(skip)
-          .limit(parseInt(limit))
-          .lean(),
-        Answer.countDocuments(filter)
-      ]);
-
-      return res.status(200).json({
-        success: true,
-        data: answers,
-        pagination: {
-          currentPage: parseInt(page),
-          totalPages: Math.ceil(total / parseInt(limit)),
-          totalAnswers: total,
-          limit: parseInt(limit)
-        }
-      });
-
-    } catch (error) {
-      console.error('Get all answers error:', error);
-      return res.status(500).json({
-        success: false,
-        message: 'Failed to fetch answers',
-        error: error.message
-      });
-    }
-  }
-
-  // ========== GET ALL ANSWERS LIST (WITH DATE FILTERS & INFINITE SCROLL) ==========
-  static async getAllAnswersList(req, res) {
-    try {
-      const {
-        page = 1,
-        limit = 20,
-        year,
-        month,
-        date,
-        keyword,
-        isLatest,
-        examType,
-        sortBy = 'createdAt',
-        order = 'desc'
-      } = req.query;
-
-      const filter = {
-        status: answerStatusEnum.VERIFIED,
-        showInPortal: true
-      };
-
-      // Search by year, month, date
-      if (year || month || date) {
-        const dateFilter = {};
-
-        if (year) {
-          const yearNum = parseInt(year);
-          dateFilter.$gte = new Date(yearNum, 0, 1);
-          dateFilter.$lt = new Date(yearNum + 1, 0, 1);
-        }
-
-        if (month && year) {
-          const yearNum = parseInt(year);
-          const monthNum = parseInt(month) - 1;
-          dateFilter.$gte = new Date(yearNum, monthNum, 1);
-          dateFilter.$lt = new Date(yearNum, monthNum + 1, 1);
-        }
-
-        if (date && month && year) {
-          const yearNum = parseInt(year);
-          const monthNum = parseInt(month) - 1;
-          const dateNum = parseInt(date);
-          dateFilter.$gte = new Date(yearNum, monthNum, dateNum);
-          dateFilter.$lt = new Date(yearNum, monthNum, dateNum + 1);
-        }
-
-        if (Object.keys(dateFilter).length > 0) {
-          filter['importantDates.answerKeyDate'] = dateFilter;
-        }
-      }
-
-      // Search by keyword
-      if (keyword && keyword !== '') {
-        filter.$or = [
-          { title: { $regex: keyword, $options: 'i' } },
-          { organizationName: { $regex: keyword, $options: 'i' } },
-          { postName: { $regex: keyword, $options: 'i' } },
-          { examName: { $regex: keyword, $options: 'i' } }
-        ];
-      }
-
-      // Filter by latest
-      if (isLatest === 'true') {
-        filter.isLatest = true;
-      }
-
-      // Filter by exam type
-      if (examType && examType !== '') {
-        filter.examType = examType;
-      }
-
-      // Pagination
-      const skip = (parseInt(page) - 1) * parseInt(limit);
-      const sortOrder = order === 'asc' ? 1 : -1;
-      const sortField = sortBy || 'createdAt';
-
-      // Execute query
-      const [answers, total] = await Promise.all([
-        Answer.find(filter)
-          .sort({ [sortField]: sortOrder })
-          .skip(skip)
-          .limit(parseInt(limit))
-          .lean(),
-        Answer.countDocuments(filter)
-      ]);
-
-      const hasMore = skip + answers.length < total;
-
-      return res.status(200).json({
-        success: true,
-        data: answers,
-        pagination: {
-          currentPage: parseInt(page),
-          totalPages: Math.ceil(total / parseInt(limit)),
-          totalAnswers: total,
-          limit: parseInt(limit),
-          hasMore
-        }
-      });
-
-    } catch (error) {
-      console.error('Get all answers list error:', error);
-      return res.status(500).json({
-        success: false,
-        message: 'Failed to fetch answers list',
-        error: error.message
-      });
-    }
-  }
-
-  // ========== GET ANSWER BY ID ==========
-  static async getAnswerById(req, res) {
-    try {
-      const { id } = req.params;
-
-      const answer = await Answer.findById(id).lean();
-
-      if (!answer) {
-        return res.status(404).json({
-          success: false,
-          message: 'Answer not found'
-        });
-      }
-
-      // Check permissions
-      if (answer.status !== answerStatusEnum.VERIFIED && (!req.user || req.user.role !== 'admin')) {
-        if (!req.user || answer.createdBy.userId.toString() !== req.user._id.toString()) {
-          return res.status(403).json({
-            success: false,
-            message: 'You do not have permission to view this answer'
-          });
-        }
-      }
-
-      // Increment views (in background, don't wait)
-      Answer.findByIdAndUpdate(id, { $inc: { views: 1 } }).exec();
-
-      return res.status(200).json({
-        success: true,
-        data: answer
-      });
-
-    } catch (error) {
-      console.error('Get answer by ID error:', error);
-      return res.status(500).json({
-        success: false,
-        message: 'Failed to fetch answer',
-        error: error.message
-      });
-    }
-  }
-
-  // ========== UPDATE ANSWER ==========
-  static async updateAnswer(req, res) {
-    try {
-      const { id } = req.params;
-
-      const answer = await Answer.findById(id);
-
-      if (!answer) {
-        return res.status(404).json({
-          success: false,
-          message: 'Answer not found'
-        });
-      }
-
-      // Check edit permissions
-      if (req.user.role !== 'admin' && answer.createdBy.userId.toString() !== req.user._id.toString()) {
-        return res.status(403).json({
-          success: false,
-          message: 'You do not have permission to edit this answer'
-        });
-      }
-
-      console.log('Updating answer with data:', JSON.stringify(req.body, null, 2));
-
-      // Handle file uploads if present
-      if (req.files) {
-        const uploadedFiles = answer.uploadedFiles || [];
-
-        for (const fieldName in req.files) {
-          const files = req.files[fieldName];
-
-          for (const file of files) {
-            try {
-              // Delete old file from Cloudinary if exists
-              if (answer[fieldName] && answer[fieldName].cloudinaryId) {
-                await deleteFromCloudinary(answer[fieldName].cloudinaryId);
-              }
-
-              // Upload new file to Cloudinary
-              const uploadResult = await uploadToCloudinary(file.path, 'answer-keys');
-
-              const fileType = file.mimetype.split('/')[1] || 'other';
-
-              const fileData = {
-                fileName: req.body[`${fieldName}_name`] || file.originalname,
-                fileUrl: uploadResult.url,
-                cloudinaryId: uploadResult.cloudinaryId,
-                fileType: fileType,
-                uploadedAt: new Date()
-              };
-
-              // Update specific field
-              if (['officialNotification', 'examDateNotice', 'syllabusFile', 'admitCardFile', 'answerKeyFile', 'resultFile'].includes(fieldName)) {
-                answer[fieldName] = fileData;
-              }
-
-              // Add to uploadedFiles array
-              uploadedFiles.push(fileData);
-
-              // Delete temporary file
-              fs.unlinkSync(file.path);
-            } catch (uploadError) {
-              console.error(`Error uploading file ${file.originalname}:`, uploadError);
-            }
-          }
-        }
-
-        answer.uploadedFiles = uploadedFiles;
-      }
-
-      // Update other fields
-      Object.keys(req.body).forEach(key => {
-        if (key !== 'status' && key !== 'createdBy' && !key.endsWith('_name')) {
-          answer[key] = req.body[key];
-        }
-      });
-
-      await answer.save();
-
-      return res.status(200).json({
-        success: true,
-        message: 'Answer updated successfully',
-        data: answer
-      });
-
-    } catch (error) {
-      console.error('Update answer error:', error);
-
-      // Cleanup uploaded files on error
-      if (req.files) {
-        cleanupFileFields(req.files);
-      }
-
-      return res.status(500).json({
-        success: false,
-        message: 'Failed to update answer',
-        error: error.message
-      });
-    }
-  }
-
-  // ========== CHANGE ANSWER STATUS (ADMIN ONLY) ==========
-  static async changeAnswerStatus(req, res) {
-    try {
-      const { id } = req.params;
-      const { status, remark, rejectionReason } = req.body;
-
-      // Check admin permission
-      if (req.user.role !== 'admin') {
-        return res.status(403).json({
-          success: false,
-          message: 'Only admin can change answer status'
-        });
-      }
-
-      // Validate status
-      if (!Object.values(answerStatusEnum).includes(status)) {
-        return res.status(400).json({
-          success: false,
-          message: `Invalid status. Must be one of: ${Object.values(answerStatusEnum).join(', ')}`
-        });
-      }
-
-      const answer = await Answer.findById(id);
-
-      if (!answer) {
-        return res.status(404).json({
-          success: false,
-          message: 'Answer not found'
-        });
-      }
-
-      // Update status
-      answer.status = status;
-      answer.statusRemark = remark || '';
-      answer.statusChangedAt = new Date();
-
-      // Add rejection reason if status is rejected
-      if (status === answerStatusEnum.REJECTED) {
-        answer.rejectionReason = rejectionReason || '';
-      } else {
-        answer.rejectionReason = '';
-      }
-
-      // Add approver snapshot if verified
-      if (status === answerStatusEnum.VERIFIED) {
-        answer.approvedBy = {
-          userId: req.user._id,
-          firstName: req.user.firstName || req.user.name || '',
-          lastName: req.user.lastName || '',
-          email: req.user.email,
-          phone: req.user.phone || '',
-          role: req.user.role
-        };
-      }
-
-      await answer.save();
-
-      return res.status(200).json({
-        success: true,
-        message: `Answer status updated to ${status}`,
-        data: answer
-      });
-
-    } catch (error) {
-      console.error('Change answer status error:', error);
-      return res.status(500).json({
-        success: false,
-        message: 'Failed to change answer status',
-        error: error.message
-      });
-    }
-  }
-
-  // ========== DELETE ANSWER ==========
-  static async deleteAnswer(req, res) {
-    try {
-      const { id } = req.params;
-
-      const answer = await Answer.findById(id);
-
-      if (!answer) {
-        return res.status(404).json({
-          success: false,
-          message: 'Answer not found'
-        });
-      }
-
-      // Check delete permissions
-      if (req.user.role !== 'admin' && answer.createdBy.userId.toString() !== req.user._id.toString()) {
-        return res.status(403).json({
-          success: false,
-          message: 'You do not have permission to delete this answer'
-        });
-      }
-
-      // Delete all uploaded files from Cloudinary
-      if (answer.uploadedFiles && answer.uploadedFiles.length > 0) {
-        for (const file of answer.uploadedFiles) {
-          if (file.cloudinaryId) {
-            try {
-              await deleteFromCloudinary(file.cloudinaryId);
-            } catch (error) {
-              console.error(`Error deleting file ${file.cloudinaryId}:`, error);
-            }
-          }
-        }
-      }
-
-      await answer.deleteOne();
-
-      return res.status(200).json({
-        success: true,
-        message: 'Answer deleted successfully'
-      });
-
-    } catch (error) {
-      console.error('Delete answer error:', error);
-      return res.status(500).json({
-        success: false,
-        message: 'Failed to delete answer',
-        error: error.message
-      });
-    }
-  }
-
-  // ========== GET MY ANSWERS ==========
-  static async getMyAnswers(req, res) {
-    try {
-      const {
-        status,
-        page = 1,
-        limit = 20
-      } = req.query;
-
-      const filter = {
-        'createdBy.userId': req.user._id
-      };
-
-      if (status && status !== '') {
-        filter.status = status;
-      }
-
-      const skip = (parseInt(page) - 1) * parseInt(limit);
-
-      const [answers, total] = await Promise.all([
-        Answer.find(filter)
-          .sort({ createdAt: -1 })
-          .skip(skip)
-          .limit(parseInt(limit))
-          .lean(),
-        Answer.countDocuments(filter)
-      ]);
-
-      return res.status(200).json({
-        success: true,
-        data: answers,
-        pagination: {
-          currentPage: parseInt(page),
-          totalPages: Math.ceil(total / parseInt(limit)),
-          totalAnswers: total,
-          limit: parseInt(limit)
-        }
-      });
-
-    } catch (error) {
-      console.error('Get my answers error:', error);
-      return res.status(500).json({
-        success: false,
-        message: 'Failed to fetch your answers',
-        error: error.message
-      });
-    }
-  }
-
-  // ========== GET LATEST ANSWERS ==========
-  static async getLatestAnswers(req, res) {
-    try {
-      const { limit = 10 } = req.query;
-
-      const answers = await Answer.findLatest(parseInt(limit));
-
-      return res.status(200).json({
-        success: true,
-        data: answers
-      });
-
-    } catch (error) {
-      console.error('Get latest answers error:', error);
-      return res.status(500).json({
-        success: false,
-        message: 'Failed to fetch latest answers',
-        error: error.message
-      });
-    }
-  }
-
-  // ========== SEARCH ANSWERS ==========
-  static async searchAnswers(req, res) {
-    try {
-      const {
-        keyword,
-        examType,
-        category,
-        page = 1,
-        limit = 20
-      } = req.query;
-
-      const filter = {
-        status: answerStatusEnum.VERIFIED,
-        showInPortal: true
-      };
-
-      // Text search
-      if (keyword && keyword !== '') {
-        filter.$or = [
-          { title: { $regex: keyword, $options: 'i' } },
-          { organizationName: { $regex: keyword, $options: 'i' } },
-          { postName: { $regex: keyword, $options: 'i' } },
-          { examName: { $regex: keyword, $options: 'i' } }
-        ];
-      }
-
-      // Exam type filter
-      if (examType && examType !== '') {
-        filter.examType = examType;
-      }
-
-      // Category filter
-      if (category && category !== '') {
-        filter.category = category;
-      }
-
-      const skip = (parseInt(page) - 1) * parseInt(limit);
-
-      const [answers, total] = await Promise.all([
-        Answer.find(filter)
-          .sort({ createdAt: -1 })
-          .skip(skip)
-          .limit(parseInt(limit))
-          .lean(),
-        Answer.countDocuments(filter)
-      ]);
-
-      return res.status(200).json({
-        success: true,
-        data: answers,
-        pagination: {
-          currentPage: parseInt(page),
-          totalPages: Math.ceil(total / parseInt(limit)),
-          totalAnswers: total,
-          limit: parseInt(limit)
-        }
-      });
-
-    } catch (error) {
-      console.error('Search answers error:', error);
-      return res.status(500).json({
-        success: false,
-        message: 'Failed to search answers',
-        error: error.message
-      });
-    }
-  }
-
-  // ========== GET ANSWER STATISTICS (ADMIN ONLY) ==========
-  static async getAnswerStats(req, res) {
-    try {
-      if (req.user.role !== 'admin') {
-        return res.status(403).json({
-          success: false,
-          message: 'Only admin can view statistics'
-        });
-      }
-
-      // Get basic statistics
-      const stats = await Answer.getStatistics();
-
-      // Get exam type-wise counts
-      const examTypeStats = await Answer.aggregate([
-        {
-          $group: {
-            _id: '$examType',
-            count: { $sum: 1 }
-          }
-        }
-      ]);
-
-      // Get category-wise counts
-      const categoryStats = await Answer.aggregate([
-        {
-          $group: {
-            _id: '$category',
-            count: { $sum: 1 }
-          }
-        }
-      ]);
-
-      // Recent answers
-      const recentAnswers = await Answer.find()
-        .sort({ createdAt: -1 })
-        .limit(5)
-        .select('title organizationName status createdAt createdBy.firstName createdBy.lastName')
-        .lean();
-
-      return res.status(200).json({
-        success: true,
-        data: {
-          ...stats,
-          examTypeStats,
-          categoryStats,
-          recentAnswers
-        }
-      });
-
-    } catch (error) {
-      console.error('Get answer stats error:', error);
-      return res.status(500).json({
-        success: false,
-        message: 'Failed to fetch statistics',
-        error: error.message
-      });
-    }
-  }
-
-  // ========== UPLOAD FILE TO EXISTING ANSWER ==========
-  static async uploadFileToAnswer(req, res) {
-    try {
-      const { id } = req.params;
-      const { fileFieldName } = req.body;
-
-      if (!req.file) {
-        return res.status(400).json({
-          success: false,
-          message: 'No file uploaded'
-        });
-      }
-
-      const answer = await Answer.findById(id);
-
-      if (!answer) {
-        cleanupFiles(req.file);
-        return res.status(404).json({
-          success: false,
-          message: 'Answer not found'
-        });
-      }
-
-      // Check permissions
-      if (req.user.role !== 'admin' && answer.createdBy.userId.toString() !== req.user._id.toString()) {
-        cleanupFiles(req.file);
-        return res.status(403).json({
-          success: false,
-          message: 'You do not have permission to upload files to this answer'
-        });
-      }
-
-      try {
-        // Upload to Cloudinary
-        const uploadResult = await uploadToCloudinary(req.file.path, 'answer-keys');
-
-        const fileType = req.file.mimetype.split('/')[1] || 'other';
-
-        const fileData = {
-          fileName: req.body.fileName || req.file.originalname,
-          fileUrl: uploadResult.url,
-          cloudinaryId: uploadResult.cloudinaryId,
-          fileType: fileType,
-          uploadedAt: new Date()
-        };
-
-        // If specific field name provided, update that field
-        if (fileFieldName && ['officialNotification', 'examDateNotice', 'syllabusFile', 'admitCardFile', 'answerKeyFile', 'resultFile'].includes(fileFieldName)) {
-          // Delete old file if exists
-          if (answer[fileFieldName] && answer[fileFieldName].cloudinaryId) {
-            await deleteFromCloudinary(answer[fileFieldName].cloudinaryId);
-          }
-          answer[fileFieldName] = fileData;
-        }
-
-        // Add to uploadedFiles array
-        if (!answer.uploadedFiles) {
-          answer.uploadedFiles = [];
-        }
-        answer.uploadedFiles.push(fileData);
-
-        await answer.save();
-
-        // Delete temporary file
-        fs.unlinkSync(req.file.path);
-
-        return res.status(200).json({
-          success: true,
-          message: 'File uploaded successfully',
-          data: {
-            file: fileData,
-            answer: answer
-          }
-        });
-
-      } catch (uploadError) {
-        cleanupFiles(req.file);
-        throw uploadError;
-      }
-
-    } catch (error) {
-      console.error('Upload file to answer error:', error);
-      return res.status(500).json({
-        success: false,
-        message: 'Failed to upload file',
-        error: error.message
-      });
-    }
-  }
-
-  // ========== DELETE FILE FROM ANSWER ==========
-  static async deleteFileFromAnswer(req, res) {
-    try {
-      const { id, fileId } = req.params;
-
-      const answer = await Answer.findById(id);
-
-      if (!answer) {
-        return res.status(404).json({
-          success: false,
-          message: 'Answer not found'
-        });
-      }
-
-      // Check permissions
-      if (req.user.role !== 'admin' && answer.createdBy.userId.toString() !== req.user._id.toString()) {
-        return res.status(403).json({
-          success: false,
-          message: 'You do not have permission to delete files from this answer'
-        });
-      }
-
-      // Find file in uploadedFiles array
-      const fileIndex = answer.uploadedFiles.findIndex(
-        file => file._id && file._id.toString() === fileId
-      );
-
-      if (fileIndex === -1) {
-        return res.status(404).json({
-          success: false,
-          message: 'File not found'
-        });
-      }
-
-      const file = answer.uploadedFiles[fileIndex];
-
-      // Delete from Cloudinary
-      if (file.cloudinaryId) {
-        await deleteFromCloudinary(file.cloudinaryId);
-      }
-
-      // Remove from array
-      answer.uploadedFiles.splice(fileIndex, 1);
-
-      await answer.save();
-
-      return res.status(200).json({
-        success: true,
-        message: 'File deleted successfully'
-      });
-
-    } catch (error) {
-      console.error('Delete file from answer error:', error);
-      return res.status(500).json({
-        success: false,
-        message: 'Failed to delete file',
-        error: error.message
-      });
-    }
-  }
+const mongoose = require('mongoose');
+
+// Import other models (if they exist)
+let Admission, LatestNotice;
+try {
+  Admission = require('../../models/admission/admission');
+} catch (err) {
+  Admission = null;
+}
+try {
+  LatestNotice = require('../../models/latestNotice/latestNotice');
+} catch (err) {
+  LatestNotice = null;
 }
 
-module.exports = AnswerController;
+// Create Answer
+const createAnswer = async (req, res) => {
+  try {
+    // Check if reference exists if referenceId is provided
+    if (req.body.referenceId && req.body.referenceModel) {
+      let referenceExists;
+      switch (req.body.referenceModel) {
+        case 'Job':
+          referenceExists = await Job.findById(req.body.referenceId);
+          if (!referenceExists) {
+            return res.status(404).json({
+              success: false,
+              message: 'Referenced Job not found'
+            });
+          }
+          break;
+        case 'Admission':
+          if (!Admission) {
+            return res.status(400).json({
+              success: false,
+              message: 'Admission model is not available'
+            });
+          }
+          referenceExists = await Admission.findById(req.body.referenceId);
+          if (!referenceExists) {
+            return res.status(404).json({
+              success: false,
+              message: 'Referenced Admission not found'
+            });
+          }
+          break;
+        case 'LatestNotice':
+          if (!LatestNotice) {
+            return res.status(400).json({
+              success: false,
+              message: 'LatestNotice model is not available'
+            });
+          }
+          referenceExists = await LatestNotice.findById(req.body.referenceId);
+          if (!referenceExists) {
+            return res.status(404).json({
+              success: false,
+              message: 'Referenced LatestNotice not found'
+            });
+          }
+          break;
+        default:
+          break;
+      }
+    }
+
+    // Create answer with all dynamic content fields
+    const answerData = {
+      type: req.body.type,
+      referenceId: req.body.referenceId || null,
+      referenceModel: req.body.referenceModel || null,
+      directWebURL: req.body.directWebURL || '',
+      linkMenuField: req.body.linkMenuField || '',
+      postTypeDetails: req.body.postTypeDetails || '',
+      alsoShowLink: req.body.alsoShowLink || false,
+      description: req.body.description || '',
+      dynamicContent: req.body.dynamicContent || [],
+      contentSections: req.body.contentSections || [],
+      importantInstructions: req.body.importantInstructions || [],
+      documentsRequired: req.body.documentsRequired || [],
+      examName: req.body.examName || '',
+      publishDate: req.body.publishDate || new Date(),
+      lastDate: req.body.lastDate || null,
+      status: req.user.role === 'admin' ? (req.body.status || 'pending') : 'pending',
+      answerStatus: req.body.answerStatus || 'active',
+      category: req.body.category || '',
+      tags: req.body.tags || [],
+      createdBy: req.user._id,
+      createdByDetails: {
+        name: req.user.name,
+        email: req.user.email,
+        phone: req.user.phone || '',
+        role: req.user.role,
+        userId: req.user._id
+      }
+    };
+
+    // Handle file uploads if present
+    if (req.files && Object.keys(req.files).length > 0) {
+      const fileFields = ['officialNotification', 'examDateNotice', 'syllabusFile', 'admitCardFile', 'answerKeyFile', 'resultFile', 'otherFile'];
+
+      for (const fieldName of fileFields) {
+        if (req.files[fieldName] && req.files[fieldName][0]) {
+          const file = req.files[fieldName][0];
+
+          try {
+            // Upload to Cloudinary
+            const uploadResult = await uploadToCloudinary(file.path, 'answer-keys');
+
+            // Get file type from extension
+            const fileType = file.mimetype.split('/')[1] || 'other';
+
+            const fileData = {
+              fileName: req.body[`${fieldName}_name`] || file.originalname,
+              fileUrl: uploadResult.url,
+              cloudinaryId: uploadResult.cloudinaryId,
+              fileType: fileType,
+              uploadedAt: new Date()
+            };
+
+            answerData[fieldName] = fileData;
+
+            // Delete temporary file
+            const fs = require('fs');
+            if (fs.existsSync(file.path)) {
+              fs.unlinkSync(file.path);
+            }
+          } catch (uploadError) {
+            console.error(`Error uploading file ${file.originalname}:`, uploadError);
+          }
+        }
+      }
+    }
+
+    const answer = new Answer(answerData);
+    await answer.save();
+
+    return res.status(201).json({
+      success: true,
+      message: 'Answer created successfully',
+      data: answer
+    });
+  } catch (error) {
+    console.error('Create answer error:', error);
+
+    // Cleanup uploaded files on error
+    if (req.files) {
+      const fs = require('fs');
+      for (const fieldName in req.files) {
+        const files = req.files[fieldName];
+        files.forEach(file => {
+          if (fs.existsSync(file.path)) {
+            fs.unlinkSync(file.path);
+          }
+        });
+      }
+    }
+
+    return res.status(500).json({
+      success: false,
+      message: 'Failed to create answer',
+      error: error.message
+    });
+  }
+};
+
+// Get All Answers with Filters
+const getAllAnswers = async (req, res) => {
+  try {
+    const {
+      type,
+      status,
+      answerStatus,
+      category,
+      tags,
+      createdBy,
+      startDate,
+      endDate,
+      search,
+      page = 1,
+      limit = 10,
+      sortBy = 'publishDate',
+      sortOrder = 'desc'
+    } = req.query;
+
+    // Build filter
+    const filter = {};
+
+    // Role-based filtering
+    if (req.user && (req.user.role === 'publisher' || req.user.role === 'assistant')) {
+      filter.createdBy = req.user._id;
+    } else if (req.user && req.user.role === 'admin') {
+      // Admin can see all
+    } else {
+      // For other roles, only show verified answers
+      filter.status = 'verified';
+      filter.answerStatus = 'active';
+    }
+
+    if (type) filter.type = type;
+    if (status) filter.status = status;
+    if (answerStatus) filter.answerStatus = answerStatus;
+    if (category) filter.category = category;
+    if (createdBy) filter.createdBy = createdBy;
+
+    // Date filtering
+    if (startDate || endDate) {
+      filter.publishDate = {};
+      if (startDate) filter.publishDate.$gte = new Date(startDate);
+      if (endDate) filter.publishDate.$lte = new Date(endDate);
+    }
+
+    // Tags filtering
+    if (tags) {
+      const tagsArray = Array.isArray(tags) ? tags : [tags];
+      filter.tags = { $in: tagsArray };
+    }
+
+    // Search functionality
+    if (search) {
+      filter.$or = [
+        { linkMenuField: { $regex: search, $options: 'i' } },
+        { postTypeDetails: { $regex: search, $options: 'i' } },
+        { examName: { $regex: search, $options: 'i' } },
+        { 'createdByDetails.name': { $regex: search, $options: 'i' } },
+        { category: { $regex: search, $options: 'i' } }
+      ];
+    }
+
+    // Sorting
+    const sort = {};
+    sort[sortBy] = sortOrder === 'desc' ? -1 : 1;
+
+    // Pagination
+    const skip = (page - 1) * limit;
+
+    // Fetch answers
+    const [answers, total] = await Promise.all([
+      Answer.find(filter)
+        .populate('referenceId')
+        .populate('createdBy', 'name email role')
+        .populate('verifiedBy', 'name email role')
+        .sort(sort)
+        .skip(skip)
+        .limit(parseInt(limit))
+        .lean(),
+      Answer.countDocuments(filter)
+    ]);
+
+    // Calculate pagination info
+    const totalPages = Math.ceil(total / limit);
+    const hasNextPage = page < totalPages;
+    const hasPreviousPage = page > 1;
+
+    return res.status(200).json({
+      success: true,
+      data: answers,
+      pagination: {
+        total,
+        page: parseInt(page),
+        limit: parseInt(limit),
+        totalPages,
+        hasNextPage,
+        hasPreviousPage
+      }
+    });
+  } catch (error) {
+    console.error('Get all answers error:', error);
+    return res.status(500).json({
+      success: false,
+      message: 'Failed to fetch answers',
+      error: error.message
+    });
+  }
+};
+
+// Get Answer by ID
+const getAnswerById = async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    if (!mongoose.Types.ObjectId.isValid(id)) {
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid answer ID format'
+      });
+    }
+
+    const answer = await Answer.findById(id)
+      .populate('referenceId')
+      .populate('createdBy', 'name email role')
+      .populate('verifiedBy', 'name email role')
+      .lean();
+
+    if (!answer) {
+      return res.status(404).json({
+        success: false,
+        message: 'Answer not found'
+      });
+    }
+
+    // Check permissions
+    if (answer.status !== 'verified') {
+      if (!req.user) {
+        return res.status(403).json({
+          success: false,
+          message: 'You do not have permission to view this answer'
+        });
+      }
+
+      if (req.user.role !== 'admin' && answer.createdBy.toString() !== req.user._id.toString()) {
+        return res.status(403).json({
+          success: false,
+          message: 'You do not have permission to view this answer'
+        });
+      }
+    }
+
+    return res.status(200).json({
+      success: true,
+      data: answer
+    });
+  } catch (error) {
+    console.error('Get answer by ID error:', error);
+    return res.status(500).json({
+      success: false,
+      message: 'Failed to fetch answer',
+      error: error.message
+    });
+  }
+};
+
+// Update Answer
+const updateAnswer = async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    if (!mongoose.Types.ObjectId.isValid(id)) {
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid answer ID format'
+      });
+    }
+
+    const answer = await Answer.findById(id);
+    if (!answer) {
+      return res.status(404).json({
+        success: false,
+        message: 'Answer not found'
+      });
+    }
+
+    // Check permissions
+    if (answer.createdBy.toString() !== req.user._id.toString() && req.user.role !== 'admin') {
+      return res.status(403).json({
+        success: false,
+        message: 'You do not have permission to update this answer'
+      });
+    }
+
+    // Non-admin cannot update status
+    if (req.user.role !== 'admin' && req.body.status && req.body.status !== 'pending') {
+      return res.status(403).json({
+        success: false,
+        message: 'Only admin can change status'
+      });
+    }
+
+    // Check if reference exists if updating referenceId
+    if (req.body.referenceId && req.body.referenceModel) {
+      let referenceExists;
+      switch (req.body.referenceModel) {
+        case 'Job':
+          referenceExists = await Job.findById(req.body.referenceId);
+          if (!referenceExists) {
+            return res.status(404).json({
+              success: false,
+              message: 'Referenced Job not found'
+            });
+          }
+          break;
+        case 'Admission':
+          if (!Admission) {
+            return res.status(400).json({
+              success: false,
+              message: 'Admission model is not available'
+            });
+          }
+          referenceExists = await Admission.findById(req.body.referenceId);
+          if (!referenceExists) {
+            return res.status(404).json({
+              success: false,
+              message: 'Referenced Admission not found'
+            });
+          }
+          break;
+        case 'LatestNotice':
+          if (!LatestNotice) {
+            return res.status(400).json({
+              success: false,
+              message: 'LatestNotice model is not available'
+            });
+          }
+          referenceExists = await LatestNotice.findById(req.body.referenceId);
+          if (!referenceExists) {
+            return res.status(404).json({
+              success: false,
+              message: 'Referenced LatestNotice not found'
+            });
+          }
+          break;
+        default:
+          break;
+      }
+    }
+
+    // Handle file uploads if present
+    if (req.files && Object.keys(req.files).length > 0) {
+      const fileFields = ['officialNotification', 'examDateNotice', 'syllabusFile', 'admitCardFile', 'answerKeyFile', 'resultFile', 'otherFile'];
+
+      for (const fieldName of fileFields) {
+        if (req.files[fieldName] && req.files[fieldName][0]) {
+          const file = req.files[fieldName][0];
+
+          try {
+            // Delete old file from Cloudinary if exists
+            if (answer[fieldName] && answer[fieldName].cloudinaryId) {
+              await deleteFromCloudinary(answer[fieldName].cloudinaryId);
+            }
+
+            // Upload new file to Cloudinary
+            const uploadResult = await uploadToCloudinary(file.path, 'answer-keys');
+
+            const fileType = file.mimetype.split('/')[1] || 'other';
+
+            const fileData = {
+              fileName: req.body[`${fieldName}_name`] || file.originalname,
+              fileUrl: uploadResult.url,
+              cloudinaryId: uploadResult.cloudinaryId,
+              fileType: fileType,
+              uploadedAt: new Date()
+            };
+
+            answer[fieldName] = fileData;
+
+            // Delete temporary file
+            const fs = require('fs');
+            if (fs.existsSync(file.path)) {
+              fs.unlinkSync(file.path);
+            }
+          } catch (uploadError) {
+            console.error(`Error uploading file ${file.originalname}:`, uploadError);
+          }
+        }
+      }
+    }
+
+    // Update other fields
+    const updateFields = ['type', 'referenceId', 'referenceModel', 'directWebURL', 'linkMenuField',
+                          'postTypeDetails', 'alsoShowLink', 'description', 'dynamicContent',
+                          'contentSections', 'importantInstructions', 'documentsRequired', 'examName',
+                          'publishDate', 'lastDate', 'answerStatus', 'category', 'tags'];
+
+    updateFields.forEach(field => {
+      if (req.body[field] !== undefined) {
+        answer[field] = req.body[field];
+      }
+    });
+
+    await answer.save();
+
+    return res.status(200).json({
+      success: true,
+      message: 'Answer updated successfully',
+      data: answer
+    });
+  } catch (error) {
+    console.error('Update answer error:', error);
+
+    // Cleanup uploaded files on error
+    if (req.files) {
+      const fs = require('fs');
+      for (const fieldName in req.files) {
+        const files = req.files[fieldName];
+        files.forEach(file => {
+          if (fs.existsSync(file.path)) {
+            fs.unlinkSync(file.path);
+          }
+        });
+      }
+    }
+
+    return res.status(500).json({
+      success: false,
+      message: 'Failed to update answer',
+      error: error.message
+    });
+  }
+};
+
+// Update Status (Admin only)
+const updateStatus = async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    if (!mongoose.Types.ObjectId.isValid(id)) {
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid answer ID format'
+      });
+    }
+
+    const answer = await Answer.findById(id);
+    if (!answer) {
+      return res.status(404).json({
+        success: false,
+        message: 'Answer not found'
+      });
+    }
+
+    // Check admin permission
+    if (req.user.role !== 'admin') {
+      return res.status(403).json({
+        success: false,
+        message: 'Only admin can update answer status'
+      });
+    }
+
+    // Prepare update data
+    const updateData = {
+      status: req.body.status,
+      verifiedBy: req.user._id,
+      verifiedByDetails: {
+        name: req.user.name,
+        email: req.user.email,
+        phone: req.user.phone || '',
+        role: req.user.role,
+        userId: req.user._id
+      },
+      verifiedAt: new Date()
+    };
+
+    // Add rejection reason if status is rejected
+    if (req.body.status === 'rejected' && req.body.rejectionReason) {
+      updateData.rejectionReason = req.body.rejectionReason;
+    } else if (req.body.status !== 'rejected') {
+      updateData.rejectionReason = null;
+    }
+
+    // Update answer status
+    const updatedAnswer = await Answer.findByIdAndUpdate(
+      id,
+      updateData,
+      { new: true, runValidators: true }
+    )
+      .populate('referenceId')
+      .populate('createdBy', 'name email role')
+      .populate('verifiedBy', 'name email role');
+
+    return res.status(200).json({
+      success: true,
+      message: `Answer status updated to ${req.body.status}`,
+      data: updatedAnswer
+    });
+  } catch (error) {
+    console.error('Update status error:', error);
+    return res.status(500).json({
+      success: false,
+      message: 'Failed to update status',
+      error: error.message
+    });
+  }
+};
+
+// Delete Answer
+const deleteAnswer = async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    if (!mongoose.Types.ObjectId.isValid(id)) {
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid answer ID format'
+      });
+    }
+
+    const answer = await Answer.findById(id);
+    if (!answer) {
+      return res.status(404).json({
+        success: false,
+        message: 'Answer not found'
+      });
+    }
+
+    // Check permissions
+    if (answer.createdBy.toString() !== req.user._id.toString() && req.user.role !== 'admin') {
+      return res.status(403).json({
+        success: false,
+        message: 'You do not have permission to delete this answer'
+      });
+    }
+
+    // Delete all uploaded files from Cloudinary
+    const fileFields = ['officialNotification', 'examDateNotice', 'syllabusFile', 'admitCardFile', 'answerKeyFile', 'resultFile', 'otherFile'];
+
+    for (const fieldName of fileFields) {
+      if (answer[fieldName] && answer[fieldName].cloudinaryId) {
+        try {
+          await deleteFromCloudinary(answer[fieldName].cloudinaryId);
+        } catch (error) {
+          console.error(`Error deleting file ${answer[fieldName].cloudinaryId}:`, error);
+        }
+      }
+    }
+
+    await Answer.findByIdAndDelete(id);
+
+    return res.status(200).json({
+      success: true,
+      message: 'Answer deleted successfully'
+    });
+  } catch (error) {
+    console.error('Delete answer error:', error);
+    return res.status(500).json({
+      success: false,
+      message: 'Failed to delete answer',
+      error: error.message
+    });
+  }
+};
+
+// Get Answers by Job ID
+const getAnswersByJobId = async (req, res) => {
+  try {
+    const { jobId } = req.params;
+
+    if (!mongoose.Types.ObjectId.isValid(jobId)) {
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid job ID format'
+      });
+    }
+
+    const answers = await Answer.find({
+      referenceId: jobId,
+      referenceModel: 'Job',
+      status: 'verified',
+      answerStatus: 'active'
+    })
+      .populate('referenceId', 'title departmentName postName')
+      .populate('createdBy', 'name email role')
+      .sort({ publishDate: -1 })
+      .lean();
+
+    return res.status(200).json({
+      success: true,
+      data: answers
+    });
+  } catch (error) {
+    console.error('Get answers by job ID error:', error);
+    return res.status(500).json({
+      success: false,
+      message: 'Failed to fetch answers',
+      error: error.message
+    });
+  }
+};
+
+// Get Public Answers
+const getPublicAnswers = async (req, res) => {
+  try {
+    const {
+      type,
+      category,
+      tags,
+      search,
+      page = 1,
+      limit = 10,
+      sortBy = 'publishDate',
+      sortOrder = 'desc'
+    } = req.query;
+
+    // Build filter for public access
+    const filter = {
+      status: 'verified',
+      answerStatus: 'active'
+    };
+
+    if (type) filter.type = type;
+    if (category) filter.category = category;
+
+    // Tags filtering
+    if (tags) {
+      const tagsArray = Array.isArray(tags) ? tags : [tags];
+      filter.tags = { $in: tagsArray };
+    }
+
+    // Search functionality
+    if (search) {
+      filter.$or = [
+        { linkMenuField: { $regex: search, $options: 'i' } },
+        { postTypeDetails: { $regex: search, $options: 'i' } },
+        { examName: { $regex: search, $options: 'i' } },
+        { category: { $regex: search, $options: 'i' } }
+      ];
+    }
+
+    // Sorting
+    const sort = {};
+    sort[sortBy] = sortOrder === 'desc' ? -1 : 1;
+
+    // Pagination
+    const skip = (page - 1) * limit;
+
+    // Fetch public answers
+    const [answers, total] = await Promise.all([
+      Answer.find(filter)
+        .populate('referenceId', 'title departmentName postName')
+        .select('-createdByDetails -verifiedByDetails -rejectionReason -__v')
+        .sort(sort)
+        .skip(skip)
+        .limit(parseInt(limit))
+        .lean(),
+      Answer.countDocuments(filter)
+    ]);
+
+    // Calculate pagination info
+    const totalPages = Math.ceil(total / limit);
+    const hasNextPage = page < totalPages;
+    const hasPreviousPage = page > 1;
+
+    return res.status(200).json({
+      success: true,
+      data: answers,
+      pagination: {
+        total,
+        page: parseInt(page),
+        limit: parseInt(limit),
+        totalPages,
+        hasNextPage,
+        hasPreviousPage
+      }
+    });
+  } catch (error) {
+    console.error('Get public answers error:', error);
+    return res.status(500).json({
+      success: false,
+      message: 'Failed to fetch answers',
+      error: error.message
+    });
+  }
+};
+
+// Get All Answers List with Infinite Scrolling and Date Search
+const getAllAnswersList = async (req, res) => {
+  try {
+    const {
+      page = 1,
+      limit = 20,
+      year,
+      month,
+      date,
+      keyword,
+      sortBy = 'publishDate',
+      order = 'desc'
+    } = req.query;
+
+    const filter = {
+      status: 'verified',
+      answerStatus: 'active'
+    };
+
+    // Search by year, month, date
+    if (year || month || date) {
+      const dateFilter = {};
+
+      if (year) {
+        const yearNum = parseInt(year);
+        dateFilter.$gte = new Date(yearNum, 0, 1);
+        dateFilter.$lt = new Date(yearNum + 1, 0, 1);
+      }
+
+      if (month && year) {
+        const yearNum = parseInt(year);
+        const monthNum = parseInt(month) - 1;
+        dateFilter.$gte = new Date(yearNum, monthNum, 1);
+        dateFilter.$lt = new Date(yearNum, monthNum + 1, 1);
+      }
+
+      if (date && month && year) {
+        const yearNum = parseInt(year);
+        const monthNum = parseInt(month) - 1;
+        const dateNum = parseInt(date);
+        dateFilter.$gte = new Date(yearNum, monthNum, dateNum);
+        dateFilter.$lt = new Date(yearNum, monthNum, dateNum + 1);
+      }
+
+      if (Object.keys(dateFilter).length > 0) {
+        filter['publishDate'] = dateFilter;
+      }
+    }
+
+    // Search by keyword
+    if (keyword && keyword !== '') {
+      filter.$or = [
+        { linkMenuField: { $regex: keyword, $options: 'i' } },
+        { postTypeDetails: { $regex: keyword, $options: 'i' } },
+        { examName: { $regex: keyword, $options: 'i' } },
+        { category: { $regex: keyword, $options: 'i' } }
+      ];
+    }
+
+    // Pagination
+    const skip = (parseInt(page) - 1) * parseInt(limit);
+    const sortOrder = order === 'asc' ? 1 : -1;
+    const sortField = sortBy || 'publishDate';
+
+    // Execute query
+    const [answers, total] = await Promise.all([
+      Answer.find(filter)
+        .populate('referenceId')
+        .sort({ [sortField]: sortOrder })
+        .skip(skip)
+        .limit(parseInt(limit))
+        .lean(),
+      Answer.countDocuments(filter)
+    ]);
+
+    const hasMore = skip + answers.length < total;
+
+    return res.status(200).json({
+      success: true,
+      data: answers,
+      pagination: {
+        currentPage: parseInt(page),
+        totalPages: Math.ceil(total / parseInt(limit)),
+        total: total,
+        limit: parseInt(limit),
+        hasMore
+      }
+    });
+
+  } catch (error) {
+    console.error('Get all answers list error:', error);
+    return res.status(500).json({
+      success: false,
+      message: 'Failed to fetch answers list',
+      error: error.message
+    });
+  }
+};
+
+// Get Available References
+const getAvailableReferences = async (req, res) => {
+  try {
+    const { type, search } = req.query;
+
+    let references = [];
+
+    switch (type) {
+      case 'job':
+        const jobFilter = {};
+        if (search) {
+          jobFilter.$or = [
+            { departmentName: { $regex: search, $options: 'i' } },
+            { postName: { $regex: search, $options: 'i' } }
+          ];
+        }
+        references = await Job.find(jobFilter)
+          .select('_id departmentName postName importantDates.startDate importantDates.registrationLastDate status')
+          .sort({ 'importantDates.startDate': -1 })
+          .limit(50)
+          .lean();
+
+        // Format response
+        references = references.map(job => ({
+          ...job,
+          referenceModel: 'Job'
+        }));
+        break;
+
+      case 'admission':
+        if (!Admission) {
+          return res.status(400).json({
+            success: false,
+            message: 'Admission model is not available'
+          });
+        }
+        const admissionFilter = {};
+        if (search) {
+          admissionFilter.title = { $regex: search, $options: 'i' };
+        }
+        references = await Admission.find(admissionFilter)
+          .select('_id title description publishDate lastDate')
+          .sort({ publishDate: -1 })
+          .limit(50)
+          .lean();
+
+        references = references.map(adm => ({
+          ...adm,
+          referenceModel: 'Admission'
+        }));
+        break;
+
+      case 'latestNotice':
+        if (!LatestNotice) {
+          return res.status(400).json({
+            success: false,
+            message: 'LatestNotice model is not available'
+          });
+        }
+        const noticeFilter = {};
+        if (search) {
+          noticeFilter.title = { $regex: search, $options: 'i' };
+        }
+        references = await LatestNotice.find(noticeFilter)
+          .select('_id title description publishDate')
+          .sort({ publishDate: -1 })
+          .limit(50)
+          .lean();
+
+        references = references.map(notice => ({
+          ...notice,
+          referenceModel: 'LatestNotice'
+        }));
+        break;
+
+      default:
+        // Return all types
+        const queries = [
+          Job.find({ status: 'verified' })
+            .select('_id departmentName postName type publishDate')
+            .sort({ publishDate: -1 })
+            .limit(20)
+            .lean()
+        ];
+
+        if (Admission) {
+          queries.push(
+            Admission.find({})
+              .select('_id title type publishDate')
+              .sort({ publishDate: -1 })
+              .limit(20)
+              .lean()
+          );
+        }
+
+        if (LatestNotice) {
+          queries.push(
+            LatestNotice.find({})
+              .select('_id title type publishDate')
+              .sort({ publishDate: -1 })
+              .limit(20)
+              .lean()
+          );
+        }
+
+        const results = await Promise.all(queries);
+        const jobs = results[0];
+        const admissions = Admission ? results[1] : [];
+        const notices = LatestNotice ? (Admission ? results[2] : results[1]) : [];
+
+        references = {
+          jobs: jobs.map(job => ({ ...job, referenceModel: 'Job' })),
+          admissions: admissions.map(adm => ({ ...adm, referenceModel: 'Admission' })),
+          notices: notices.map(notice => ({ ...notice, referenceModel: 'LatestNotice' }))
+        };
+        break;
+    }
+
+    return res.status(200).json({
+      success: true,
+      data: references
+    });
+  } catch (error) {
+    console.error('Get available references error:', error);
+    return res.status(500).json({
+      success: false,
+      message: 'Failed to fetch references',
+      error: error.message
+    });
+  }
+};
+
+module.exports = {
+  createAnswer,
+  getAllAnswers,
+  getAnswerById,
+  updateAnswer,
+  deleteAnswer,
+  updateStatus,
+  getAnswersByJobId,
+  getPublicAnswers,
+  getAllAnswersList,
+  getAvailableReferences
+};
