@@ -60,6 +60,7 @@ const deleteFromCloudinary = async (cloudinaryId) => {
 };
 
 // Create Answer
+// Now accepts file data as JSON (URLs from upload service) instead of file uploads
 const createAnswer = async (req, res) => {
   try {
     // Check if reference exists if referenceId is provided
@@ -164,36 +165,33 @@ const createAnswer = async (req, res) => {
       }
     };
 
-    // Handle file uploads using memory storage (buffer-based)
-    if (req.files && Object.keys(req.files).length > 0) {
-      const fileFields = ['officialNotification', 'examDateNotice', 'syllabusFile', 'admitCardFile', 'answerKeyFile', 'resultFile', 'otherFile'];
+    // Handle file data from JSON body (files already uploaded via /api/upload/single)
+    const fileFields = ['officialNotification', 'examDateNotice', 'syllabusFile', 'admitCardFile', 'answerKeyFile', 'resultFile', 'otherFile'];
 
-      for (const fieldName of fileFields) {
-        if (req.files[fieldName] && req.files[fieldName][0]) {
-          const file = req.files[fieldName][0];
+    // Map file types to valid enum values
+    const mapFileType = (type) => {
+      if (!type) return 'other';
+      const lowerType = type.toLowerCase();
+      // Valid enum: ['pdf', 'jpg', 'jpeg', 'png', 'doc', 'docx', 'other']
+      if (['pdf', 'jpg', 'jpeg', 'png', 'doc', 'docx'].includes(lowerType)) {
+        return lowerType;
+      }
+      // Map common types
+      if (lowerType === 'image' || lowerType === 'gif' || lowerType === 'webp') return 'png';
+      if (lowerType === 'document') return 'pdf';
+      return 'other';
+    };
 
-          try {
-            // Upload buffer to Cloudinary (no temp files)
-            const uploadResult = await uploadBufferToCloudinary(file.buffer, {
-              folder: 'answer-keys',
-              resourceType: file.mimetype.startsWith('image/') ? 'image' : 'raw'
-            });
-
-            const fileType = file.mimetype.split('/')[1] || 'other';
-
-            const fileData = {
-              fileName: req.body[`${fieldName}_name`] || file.originalname,
-              fileUrl: uploadResult.url,
-              cloudinaryId: uploadResult.cloudinaryId,
-              fileType: fileType,
-              uploadedAt: new Date()
-            };
-
-            answerData[fieldName] = fileData;
-          } catch (uploadError) {
-            // Silent fail for individual file uploads
-          }
-        }
+    for (const fieldName of fileFields) {
+      if (req.body[fieldName] && req.body[fieldName].fileUrl) {
+        // File data comes as JSON with fileUrl, fileName, cloudinaryId, fileType
+        answerData[fieldName] = {
+          fileName: req.body[fieldName].fileName || '',
+          fileUrl: req.body[fieldName].fileUrl,
+          cloudinaryId: req.body[fieldName].cloudinaryId || '',
+          fileType: mapFileType(req.body[fieldName].fileType),
+          uploadedAt: req.body[fieldName].uploadedAt || new Date()
+        };
       }
     }
 
@@ -206,10 +204,11 @@ const createAnswer = async (req, res) => {
       data: answer
     });
   } catch (error) {
+    console.error('Create answer error:', error);
     return res.status(500).json({
       success: false,
       message: 'Failed to create answer',
-      error: process.env.NODE_ENV === 'development' ? error.message : 'Internal server error'
+      error: error.message || 'Internal server error'
     });
   }
 };
@@ -463,40 +462,53 @@ const updateAnswer = async (req, res) => {
       }
     }
 
-    // Handle file uploads using memory storage (buffer-based)
-    if (req.files && Object.keys(req.files).length > 0) {
-      const fileFields = ['officialNotification', 'examDateNotice', 'syllabusFile', 'admitCardFile', 'answerKeyFile', 'resultFile', 'otherFile'];
+    // Handle file data from JSON body (files already uploaded via /api/upload/single)
+    const fileFields = ['officialNotification', 'examDateNotice', 'syllabusFile', 'admitCardFile', 'answerKeyFile', 'resultFile', 'otherFile'];
 
-      for (const fieldName of fileFields) {
-        if (req.files[fieldName] && req.files[fieldName][0]) {
-          const file = req.files[fieldName][0];
+    // Map file types to valid enum values
+    const mapFileType = (type) => {
+      if (!type) return 'other';
+      const lowerType = type.toLowerCase();
+      // Valid enum: ['pdf', 'jpg', 'jpeg', 'png', 'doc', 'docx', 'other']
+      if (['pdf', 'jpg', 'jpeg', 'png', 'doc', 'docx'].includes(lowerType)) {
+        return lowerType;
+      }
+      // Map common types
+      if (lowerType === 'image' || lowerType === 'gif' || lowerType === 'webp') return 'png';
+      if (lowerType === 'document') return 'pdf';
+      return 'other';
+    };
 
-          try {
-            // Delete old file from Cloudinary if exists
-            if (answer[fieldName] && answer[fieldName].cloudinaryId) {
+    for (const fieldName of fileFields) {
+      if (req.body[fieldName] !== undefined) {
+        if (req.body[fieldName] && req.body[fieldName].fileUrl) {
+          // New file uploaded - check if we need to delete old file
+          if (answer[fieldName] && answer[fieldName].cloudinaryId &&
+              answer[fieldName].cloudinaryId !== req.body[fieldName].cloudinaryId) {
+            try {
               await deleteFromCloudinary(answer[fieldName].cloudinaryId);
+            } catch (err) {
+              // Silent fail for file deletion
             }
-
-            // Upload new file buffer to Cloudinary
-            const uploadResult = await uploadBufferToCloudinary(file.buffer, {
-              folder: 'answer-keys',
-              resourceType: file.mimetype.startsWith('image/') ? 'image' : 'raw'
-            });
-
-            const fileType = file.mimetype.split('/')[1] || 'other';
-
-            const fileData = {
-              fileName: req.body[`${fieldName}_name`] || file.originalname,
-              fileUrl: uploadResult.url,
-              cloudinaryId: uploadResult.cloudinaryId,
-              fileType: fileType,
-              uploadedAt: new Date()
-            };
-
-            answer[fieldName] = fileData;
-          } catch (uploadError) {
-            // Silent fail for individual file uploads
           }
+          // Set new file data
+          answer[fieldName] = {
+            fileName: req.body[fieldName].fileName || '',
+            fileUrl: req.body[fieldName].fileUrl,
+            cloudinaryId: req.body[fieldName].cloudinaryId || '',
+            fileType: mapFileType(req.body[fieldName].fileType),
+            uploadedAt: req.body[fieldName].uploadedAt || new Date()
+          };
+        } else if (req.body[fieldName] === null) {
+          // File removed - delete from Cloudinary
+          if (answer[fieldName] && answer[fieldName].cloudinaryId) {
+            try {
+              await deleteFromCloudinary(answer[fieldName].cloudinaryId);
+            } catch (err) {
+              // Silent fail for file deletion
+            }
+          }
+          answer[fieldName] = null;
         }
       }
     }

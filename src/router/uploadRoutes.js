@@ -1,7 +1,7 @@
 const express = require('express');
 const router = express.Router();
 const multer = require('multer');
-const { AuthUser } = require('../middleware/authUser');
+const { AuthUser } = require('../middleware/authMiddleware');
 
 const {
   uploadSingle,
@@ -142,8 +142,8 @@ router.post('/fields', dynamicFieldsUpload, handleMulterError, uploadFields);
  * @route   DELETE /api/upload/:cloudinaryId
  * @desc    Delete a file from Cloudinary
  * @access  Private
- * @param   cloudinaryId - The Cloudinary public ID of the file
+ * @param   cloudinaryId - The Cloudinary public ID of the file (URL encoded)
  */
-router.delete('/:cloudinaryId(*)', deleteFile);
+router.delete('/:cloudinaryId', deleteFile);
 
 module.exports = router;
