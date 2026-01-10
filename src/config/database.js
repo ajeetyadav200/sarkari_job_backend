@@ -2,7 +2,7 @@ const mongoose = require('mongoose');
 
 // Disable buffering - fail fast instead of buffering operations
 mongoose.set('bufferCommands', false);
-console.log(process.env.DATABASE_URL)
+
 // Increase buffer timeout as a safety net (60 seconds)
 mongoose.set('bufferTimeoutMS', 60000);
 
@@ -23,25 +23,27 @@ exports.connection_database = async () => {
             retryReads: true
         });
 
-        console.log("✅ MongoDB connected:", mongoose.connection.name);
-        console.log("🔗 Connection state:", mongoose.connection.readyState);
-
-        // Monitor connection health
+        // Monitor connection health (errors only in development)
         mongoose.connection.on('error', (err) => {
-            console.error('❌ MongoDB error:', err.message);
+            if (process.env.NODE_ENV !== 'production') {
+                console.error('❌ MongoDB error:', err.message);
+            }
         });
 
         mongoose.connection.on('disconnected', () => {
-            console.warn('⚠️  MongoDB disconnected');
+            if (process.env.NODE_ENV !== 'production') {
+                console.warn('⚠️  MongoDB disconnected');
+            }
         });
 
         mongoose.connection.on('reconnected', () => {
-            console.log('✅ MongoDB reconnected');
+            if (process.env.NODE_ENV !== 'production') {
+                console.log('✅ MongoDB reconnected');
+            }
         });
 
     } catch (err) {
         console.error("❌ MongoDB connection failed:", err.message);
-        console.error("Full error:", err);
         process.exit(1); // STOP SERVER
     }
 };

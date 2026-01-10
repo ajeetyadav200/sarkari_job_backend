@@ -1,70 +1,78 @@
 const multer = require('multer');
-const path = require('path');
-const fs = require('fs');
 
-// Create uploads directory if it doesn't exist
-const uploadDir = path.join(__dirname, '../../uploads/temp');
-if (!fs.existsSync(uploadDir)) {
-  fs.mkdirSync(uploadDir, { recursive: true });
-}
+/**
+ * Upload Middleware - Industry Standard Configuration
+ *
+ * Uses memory storage for:
+ * - Better scalability (no temp files)
+ * - Stream-based uploads to cloud
+ * - Works with serverless environments
+ */
 
-// Configure storage
-const storage = multer.diskStorage({
-  destination: function (req, file, cb) {
-    cb(null, uploadDir);
-  },
-  filename: function (req, file, cb) {
-    // Create unique filename with timestamp
-    const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9);
-    const ext = path.extname(file.originalname);
-    const nameWithoutExt = path.basename(file.originalname, ext);
-    cb(null, nameWithoutExt + '-' + uniqueSuffix + ext);
-  }
-});
+// Memory storage configuration
+const memoryStorage = multer.memoryStorage();
 
-// File filter
+// Allowed MIME types
+const ALLOWED_MIME_TYPES = [
+  // Images
+  'image/jpeg',
+  'image/jpg',
+  'image/png',
+  'image/gif',
+  'image/webp',
+  // Documents
+  'application/pdf',
+  'application/msword',
+  'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+  'application/vnd.ms-excel',
+  'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+];
+
+// File filter function
 const fileFilter = (req, file, cb) => {
-  // Allowed file types
-  const allowedMimeTypes = [
-    'application/pdf',
-    'image/jpeg',
-    'image/jpg',
-    'image/png',
-    'application/msword',
-    'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
-  ];
-
-  const allowedExtensions = ['.pdf', '.jpg', '.jpeg', '.png', '.doc', '.docx'];
-  const ext = path.extname(file.originalname).toLowerCase();
-
-  if (allowedMimeTypes.includes(file.mimetype) && allowedExtensions.includes(ext)) {
+  if (ALLOWED_MIME_TYPES.includes(file.mimetype)) {
     cb(null, true);
   } else {
-    cb(new Error(`Invalid file type. Allowed types: ${allowedExtensions.join(', ')}`), false);
+    cb(new Error(`File type '${file.mimetype}' is not allowed. Allowed: images (jpg, png, gif, webp) and documents (pdf, doc, docx, xls, xlsx)`), false);
   }
 };
 
-// Multer configuration
-const upload = multer({
-  storage: storage,
+// Base multer configuration
+const multerConfig = {
+  storage: memoryStorage,
   fileFilter: fileFilter,
   limits: {
-    fileSize: 10 * 1024 * 1024 // 10MB max file size
+    fileSize: 10 * 1024 * 1024, // 10MB max file size
+    files: 10 // Max 10 files per request
   }
-});
+};
 
-// Middleware for single file upload
+// Create multer instance
+const upload = multer(multerConfig);
+
+// ==================== MIDDLEWARE FUNCTIONS ====================
+
+/**
+ * Upload single file
+ * @param {string} fieldName - Form field name (default: 'file')
+ */
 const uploadSingleFile = (fieldName = 'file') => {
   return upload.single(fieldName);
 };
 
-// Middleware for multiple files upload (max 10 files)
+/**
+ * Upload multiple files with same field name
+ * @param {string} fieldName - Form field name (default: 'files')
+ * @param {number} maxCount - Maximum number of files (default: 10)
+ */
 const uploadMultipleFiles = (fieldName = 'files', maxCount = 10) => {
   return upload.array(fieldName, maxCount);
 };
 
-// Middleware for dynamic file fields
-// Accepts multiple file fields with different names
+/**
+ * Upload files with dynamic field names
+ * For forms with multiple file inputs (officialNotification, syllabusFile, etc.)
+ */
 const uploadDynamicFiles = upload.fields([
   { name: 'officialNotification', maxCount: 1 },
   { name: 'examDateNotice', maxCount: 1 },
@@ -73,38 +81,97 @@ const uploadDynamicFiles = upload.fields([
   { name: 'answerKeyFile', maxCount: 1 },
   { name: 'resultFile', maxCount: 1 },
   { name: 'otherFile', maxCount: 1 },
-  { name: 'otherFiles', maxCount: 5 }
+  { name: 'otherFiles', maxCount: 5 },
+  { name: 'file', maxCount: 1 },
+  { name: 'image', maxCount: 1 },
+  { name: 'document', maxCount: 1 },
+  { name: 'thumbnail', maxCount: 1 },
+  { name: 'banner', maxCount: 1 }
 ]);
 
-// Cleanup uploaded files (used in error cases)
-const cleanupFiles = (files) => {
-  if (!files) return;
-
-  const fileArray = Array.isArray(files) ? files : [files];
-
-  fileArray.forEach(file => {
-    if (file && file.path) {
-      fs.unlink(file.path, (err) => {
-        if (err) console.error('Error deleting file:', err);
-      });
-    }
-  });
+/**
+ * Custom fields upload
+ * @param {Array} fields - Array of field configurations
+ * @example uploadCustomFields([{ name: 'avatar', maxCount: 1 }, { name: 'gallery', maxCount: 5 }])
+ */
+const uploadCustomFields = (fields) => {
+  return upload.fields(fields);
 };
 
-// Cleanup multiple file fields
-const cleanupFileFields = (fileFields) => {
-  if (!fileFields) return;
+/**
+ * Error handling middleware for multer errors
+ */
+const handleMulterError = (err, req, res, next) => {
+  if (err instanceof multer.MulterError) {
+    const errorMessages = {
+      'LIMIT_FILE_SIZE': 'File too large. Maximum size is 10MB',
+      'LIMIT_FILE_COUNT': 'Too many files. Maximum is 10 files per request',
+      'LIMIT_UNEXPECTED_FILE': `Unexpected field: ${err.field}`,
+      'LIMIT_PART_COUNT': 'Too many parts in the request',
+      'LIMIT_FIELD_KEY': 'Field name too long',
+      'LIMIT_FIELD_VALUE': 'Field value too long',
+      'LIMIT_FIELD_COUNT': 'Too many fields'
+    };
 
-  Object.keys(fileFields).forEach(key => {
-    const files = fileFields[key];
-    cleanupFiles(files);
-  });
+    return res.status(400).json({
+      success: false,
+      message: errorMessages[err.code] || err.message,
+      code: err.code
+    });
+  }
+
+  if (err) {
+    return res.status(400).json({
+      success: false,
+      message: err.message
+    });
+  }
+
+  next();
+};
+
+/**
+ * Validate file exists middleware
+ */
+const requireFile = (fieldName = 'file') => {
+  return (req, res, next) => {
+    if (!req.file && !req.files) {
+      return res.status(400).json({
+        success: false,
+        message: 'No file provided'
+      });
+    }
+    next();
+  };
+};
+
+/**
+ * Validate specific file field exists
+ */
+const requireFileField = (fieldName) => {
+  return (req, res, next) => {
+    if (!req.files || !req.files[fieldName] || req.files[fieldName].length === 0) {
+      return res.status(400).json({
+        success: false,
+        message: `File field '${fieldName}' is required`
+      });
+    }
+    next();
+  };
 };
 
 module.exports = {
+  // Middleware functions
   uploadSingleFile,
   uploadMultipleFiles,
   uploadDynamicFiles,
-  cleanupFiles,
-  cleanupFileFields
+  uploadCustomFields,
+  handleMulterError,
+  requireFile,
+  requireFileField,
+  // Export multer instance for custom configurations
+  upload,
+  // Export config for reference
+  ALLOWED_MIME_TYPES,
+  multerConfig
 };

@@ -4,8 +4,6 @@ const { Admission, admissionStatusEnum } = require('../../models/admission');
 // Create Admission
 const createAdmission = async (req, res) => {
   try {
-    console.log('Incoming admission data:', JSON.stringify(req.body, null, 2));
-
     // Create creator snapshot
     const creatorSnapshot = {
       userId: req.user._id,
@@ -90,12 +88,6 @@ const createAdmission = async (req, res) => {
       status: admissionStatusEnum.PENDING
     };
 
-    console.log('Creating admission with data:', {
-      hasDynamicContent: admissionData.dynamicContent.length > 0,
-      hasSections: admissionData.sections.length > 0,
-      category: admissionData.category
-    });
-
     const admission = new Admission(admissionData);
     await admission.save();
 
@@ -106,11 +98,10 @@ const createAdmission = async (req, res) => {
     });
 
   } catch (error) {
-    console.error('Create admission error:', error);
     return res.status(500).json({
       success: false,
       message: 'Failed to create admission',
-      error: error.message
+      error: process.env.NODE_ENV !== 'production' ? error.message : undefined
     });
   }
 };
@@ -131,8 +122,6 @@ const getAllAdmissions = async (req, res) => {
       order = 'desc',
       applicationOpen
     } = req.query;
-
-    console.log('Query params:', req.query);
 
     // Build filter
     const filter = {};
@@ -180,9 +169,6 @@ const getAllAdmissions = async (req, res) => {
     const sortOrder = order === 'asc' ? 1 : -1;
     const sortField = sortBy || 'createdAt';
 
-    console.log('Filter:', filter);
-    console.log('Skip:', skip, 'Limit:', limit);
-
     // Execute query
     const [admissions, total] = await Promise.all([
       Admission.find(filter)
@@ -206,7 +192,7 @@ const getAllAdmissions = async (req, res) => {
         null;
     });
 
-    const response = {
+    return res.status(200).json({
       success: true,
       data: admissions,
       pagination: {
@@ -215,18 +201,13 @@ const getAllAdmissions = async (req, res) => {
         totalAdmissions: total,
         limit: parseInt(limit)
       }
-    };
-
-    console.log('Response count:', admissions.length, 'Total:', total);
-
-    return res.status(200).json(response);
+    });
 
   } catch (error) {
-    console.error('Get all admissions error:', error);
     return res.status(500).json({
       success: false,
       message: 'Failed to fetch admissions',
-      error: error.message
+      error: process.env.NODE_ENV !== 'production' ? error.message : undefined
     });
   }
 };
@@ -272,11 +253,10 @@ const getAdmissionById = async (req, res) => {
     });
 
   } catch (error) {
-    console.error('Get admission by ID error:', error);
     return res.status(500).json({
       success: false,
       message: 'Failed to fetch admission',
-      error: error.message
+      error: process.env.NODE_ENV !== 'production' ? error.message : undefined
     });
   }
 };
@@ -302,8 +282,6 @@ const updateAdmission = async (req, res) => {
         message: 'You do not have permission to edit this admission'
       });
     }
-
-    console.log('Updating admission with data:', JSON.stringify(req.body, null, 2));
 
     // Update admission fields
     const updateFields = [
@@ -333,11 +311,6 @@ const updateAdmission = async (req, res) => {
       role: req.user.role
     };
 
-    console.log('Admission updated with dynamic content:', {
-      hasDynamicContent: admission.dynamicContent?.length > 0,
-      hasSections: admission.sections?.length > 0
-    });
-
     await admission.save();
 
     return res.status(200).json({
@@ -347,11 +320,10 @@ const updateAdmission = async (req, res) => {
     });
 
   } catch (error) {
-    console.error('Update admission error:', error);
     return res.status(500).json({
       success: false,
       message: 'Failed to update admission',
-      error: error.message
+      error: process.env.NODE_ENV !== 'production' ? error.message : undefined
     });
   }
 };
@@ -420,11 +392,10 @@ const changeAdmissionStatus = async (req, res) => {
     });
 
   } catch (error) {
-    console.error('Change admission status error:', error);
     return res.status(500).json({
       success: false,
       message: 'Failed to change admission status',
-      error: error.message
+      error: process.env.NODE_ENV !== 'production' ? error.message : undefined
     });
   }
 };
@@ -459,11 +430,10 @@ const deleteAdmission = async (req, res) => {
     });
 
   } catch (error) {
-    console.error('Delete admission error:', error);
     return res.status(500).json({
       success: false,
       message: 'Failed to delete admission',
-      error: error.message
+      error: process.env.NODE_ENV !== 'production' ? error.message : undefined
     });
   }
 };
@@ -521,11 +491,10 @@ const getMyAdmissions = async (req, res) => {
     });
 
   } catch (error) {
-    console.error('Get my admissions error:', error);
     return res.status(500).json({
       success: false,
       message: 'Failed to fetch your admissions',
-      error: error.message
+      error: process.env.NODE_ENV !== 'production' ? error.message : undefined
     });
   }
 };
@@ -559,11 +528,10 @@ const getAdmissionStats = async (req, res) => {
     });
 
   } catch (error) {
-    console.error('Get admission stats error:', error);
     return res.status(500).json({
       success: false,
       message: 'Failed to fetch statistics',
-      error: error.message
+      error: process.env.NODE_ENV !== 'production' ? error.message : undefined
     });
   }
 };
@@ -590,11 +558,10 @@ const getOpenAdmissions = async (req, res) => {
     });
 
   } catch (error) {
-    console.error('Get open admissions error:', error);
     return res.status(500).json({
       success: false,
       message: 'Failed to fetch open admissions',
-      error: error.message
+      error: process.env.NODE_ENV !== 'production' ? error.message : undefined
     });
   }
 };
@@ -675,11 +642,10 @@ const searchAdmissions = async (req, res) => {
     });
 
   } catch (error) {
-    console.error('Search admissions error:', error);
     return res.status(500).json({
       success: false,
       message: 'Failed to search admissions',
-      error: error.message
+      error: process.env.NODE_ENV !== 'production' ? error.message : undefined
     });
   }
 };
@@ -792,11 +758,10 @@ const getAllAdmissionsList = async (req, res) => {
     });
 
   } catch (error) {
-    console.error('Get all admissions list error:', error);
     return res.status(500).json({
       success: false,
       message: 'Failed to fetch admissions list',
-      error: error.message
+      error: process.env.NODE_ENV !== 'production' ? error.message : undefined
     });
   }
 };
@@ -829,11 +794,10 @@ const getLatestAdmissions = async (req, res) => {
     });
 
   } catch (error) {
-    console.error('Get latest admissions error:', error);
     return res.status(500).json({
       success: false,
       message: 'Failed to fetch latest admissions',
-      error: error.message
+      error: process.env.NODE_ENV !== 'production' ? error.message : undefined
     });
   }
 };

@@ -14,6 +14,7 @@ const admitCardRoutes = require('./router/admitCardRoutes');
 const resultRoutes = require('./router/resultRoutes');
 const admissionRoutes = require('./router/admissionRoutes');
 const answerRoutes = require('./router/answerRoutes');
+const uploadRoutes = require('./router/uploadRoutes');
 
 // PORT
 const PORT = process.env.PORT || 7777;
@@ -55,16 +56,9 @@ const isOriginAllowed = (origin) => {
 
 const corsOptions = {
     origin: function (origin, callback) {
-        console.log('📨 Incoming request from origin:', origin || 'NO ORIGIN');
-
         if (isOriginAllowed(origin)) {
-            console.log('✅ CORS: Origin allowed');
             callback(null, true);
         } else {
-            console.error('❌ CORS BLOCKED!');
-            console.error('   Blocked origin:', origin);
-            console.error('   Allowed origins:', allowedOrigins);
-            console.error('   Time:', new Date().toISOString());
             callback(new Error('Not allowed by CORS'));
         }
     },
@@ -116,6 +110,7 @@ app.use('/api/admit-cards', admitCardRoutes);
 app.use('/api/results', resultRoutes);
 app.use('/api/admissions', admissionRoutes);
 app.use('/api/answers', answerRoutes);
+app.use('/api/upload', uploadRoutes);
 
 
 // Health check route (add this back)
@@ -148,7 +143,6 @@ app.use((req, res) => {
 
 // Global Error Handler
 app.use((err, req, res, next) => {
-    console.error('Global Error Handler:', err);
 
     if (err.name === 'ValidationError') {
         const errors = Object.values(err.errors).map(e => e.message);

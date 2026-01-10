@@ -1,7 +1,8 @@
 const Answer = require('../../models/answer/answerSchema');
 const { Job } = require('../../models/job/letestJob');
-const { uploadToCloudinary, deleteFromCloudinary } = require('../../config/cloudinary');
+const { cloudinary } = require('../../config/cloudinary');
 const mongoose = require('mongoose');
+const streamifier = require('streamifier');
 
 // Import other models (if they exist)
 let Admission, LatestNotice;
@@ -15,6 +16,48 @@ try {
 } catch (err) {
   LatestNotice = null;
 }
+
+/**
+ * Upload buffer to Cloudinary using stream (no temp files)
+ */
+const uploadBufferToCloudinary = (buffer, options = {}) => {
+  return new Promise((resolve, reject) => {
+    const uploadStream = cloudinary.uploader.upload_stream(
+      {
+        folder: options.folder || 'answer-keys',
+        resource_type: options.resourceType || 'auto',
+        use_filename: true,
+        unique_filename: true
+      },
+      (error, result) => {
+        if (error) {
+          reject(error);
+        } else {
+          resolve({
+            url: result.secure_url,
+            cloudinaryId: result.public_id,
+            format: result.format,
+            bytes: result.bytes
+          });
+        }
+      }
+    );
+
+    streamifier.createReadStream(buffer).pipe(uploadStream);
+  });
+};
+
+/**
+ * Delete file from Cloudinary
+ */
+const deleteFromCloudinary = async (cloudinaryId) => {
+  try {
+    const result = await cloudinary.uploader.destroy(cloudinaryId);
+    return result;
+  } catch (error) {
+    throw new Error(`Failed to delete file: ${error.message}`);
+  }
+};
 
 // Create Answer
 const createAnswer = async (req, res) => {
@@ -67,6 +110,29 @@ const createAnswer = async (req, res) => {
       }
     }
 
+    // Parse arrays if they come as JSON strings
+    let tags = req.body.tags || [];
+    let dynamicContent = req.body.dynamicContent || [];
+    let contentSections = req.body.contentSections || [];
+    let importantInstructions = req.body.importantInstructions || [];
+    let documentsRequired = req.body.documentsRequired || [];
+
+    if (typeof tags === 'string') {
+      try { tags = JSON.parse(tags); } catch (e) { tags = []; }
+    }
+    if (typeof dynamicContent === 'string') {
+      try { dynamicContent = JSON.parse(dynamicContent); } catch (e) { dynamicContent = []; }
+    }
+    if (typeof contentSections === 'string') {
+      try { contentSections = JSON.parse(contentSections); } catch (e) { contentSections = []; }
+    }
+    if (typeof importantInstructions === 'string') {
+      try { importantInstructions = JSON.parse(importantInstructions); } catch (e) { importantInstructions = []; }
+    }
+    if (typeof documentsRequired === 'string') {
+      try { documentsRequired = JSON.parse(documentsRequired); } catch (e) { documentsRequired = []; }
+    }
+
     // Create answer with all dynamic content fields
     const answerData = {
       type: req.body.type,
@@ -75,19 +141,19 @@ const createAnswer = async (req, res) => {
       directWebURL: req.body.directWebURL || '',
       linkMenuField: req.body.linkMenuField || '',
       postTypeDetails: req.body.postTypeDetails || '',
-      alsoShowLink: req.body.alsoShowLink || false,
+      alsoShowLink: req.body.alsoShowLink === 'true' || req.body.alsoShowLink === true,
       description: req.body.description || '',
-      dynamicContent: req.body.dynamicContent || [],
-      contentSections: req.body.contentSections || [],
-      importantInstructions: req.body.importantInstructions || [],
-      documentsRequired: req.body.documentsRequired || [],
+      dynamicContent: dynamicContent,
+      contentSections: contentSections,
+      importantInstructions: importantInstructions,
+      documentsRequired: documentsRequired,
       examName: req.body.examName || '',
       publishDate: req.body.publishDate || new Date(),
       lastDate: req.body.lastDate || null,
       status: req.user.role === 'admin' ? (req.body.status || 'pending') : 'pending',
       answerStatus: req.body.answerStatus || 'active',
       category: req.body.category || '',
-      tags: req.body.tags || [],
+      tags: tags,
       createdBy: req.user._id,
       createdByDetails: {
         name: req.user.name,
@@ -98,7 +164,7 @@ const createAnswer = async (req, res) => {
       }
     };
 
-    // Handle file uploads if present
+    // Handle file uploads using memory storage (buffer-based)
     if (req.files && Object.keys(req.files).length > 0) {
       const fileFields = ['officialNotification', 'examDateNotice', 'syllabusFile', 'admitCardFile', 'answerKeyFile', 'resultFile', 'otherFile'];
 
@@ -107,10 +173,12 @@ const createAnswer = async (req, res) => {
           const file = req.files[fieldName][0];
 
           try {
-            // Upload to Cloudinary
-            const uploadResult = await uploadToCloudinary(file.path, 'answer-keys');
+            // Upload buffer to Cloudinary (no temp files)
+            const uploadResult = await uploadBufferToCloudinary(file.buffer, {
+              folder: 'answer-keys',
+              resourceType: file.mimetype.startsWith('image/') ? 'image' : 'raw'
+            });
 
-            // Get file type from extension
             const fileType = file.mimetype.split('/')[1] || 'other';
 
             const fileData = {
@@ -122,14 +190,8 @@ const createAnswer = async (req, res) => {
             };
 
             answerData[fieldName] = fileData;
-
-            // Delete temporary file
-            const fs = require('fs');
-            if (fs.existsSync(file.path)) {
-              fs.unlinkSync(file.path);
-            }
           } catch (uploadError) {
-            console.error(`Error uploading file ${file.originalname}:`, uploadError);
+            // Silent fail for individual file uploads
           }
         }
       }
@@ -144,25 +206,10 @@ const createAnswer = async (req, res) => {
       data: answer
     });
   } catch (error) {
-    console.error('Create answer error:', error);
-
-    // Cleanup uploaded files on error
-    if (req.files) {
-      const fs = require('fs');
-      for (const fieldName in req.files) {
-        const files = req.files[fieldName];
-        files.forEach(file => {
-          if (fs.existsSync(file.path)) {
-            fs.unlinkSync(file.path);
-          }
-        });
-      }
-    }
-
     return res.status(500).json({
       success: false,
       message: 'Failed to create answer',
-      error: error.message
+      error: process.env.NODE_ENV === 'development' ? error.message : 'Internal server error'
     });
   }
 };
@@ -268,11 +315,10 @@ const getAllAnswers = async (req, res) => {
       }
     });
   } catch (error) {
-    console.error('Get all answers error:', error);
     return res.status(500).json({
       success: false,
       message: 'Failed to fetch answers',
-      error: error.message
+      error: process.env.NODE_ENV === 'development' ? error.message : 'Internal server error'
     });
   }
 };
@@ -302,7 +348,7 @@ const getAnswerById = async (req, res) => {
       });
     }
 
-    // Check permissions
+    // Check permissions - handle populated createdBy
     if (answer.status !== 'verified') {
       if (!req.user) {
         return res.status(403).json({
@@ -311,7 +357,8 @@ const getAnswerById = async (req, res) => {
         });
       }
 
-      if (req.user.role !== 'admin' && answer.createdBy.toString() !== req.user._id.toString()) {
+      const createdById = answer.createdBy?._id || answer.createdBy;
+      if (req.user.role !== 'admin' && createdById?.toString() !== req.user._id.toString()) {
         return res.status(403).json({
           success: false,
           message: 'You do not have permission to view this answer'
@@ -324,11 +371,10 @@ const getAnswerById = async (req, res) => {
       data: answer
     });
   } catch (error) {
-    console.error('Get answer by ID error:', error);
     return res.status(500).json({
       success: false,
       message: 'Failed to fetch answer',
-      error: error.message
+      error: process.env.NODE_ENV === 'development' ? error.message : 'Internal server error'
     });
   }
 };
@@ -417,7 +463,7 @@ const updateAnswer = async (req, res) => {
       }
     }
 
-    // Handle file uploads if present
+    // Handle file uploads using memory storage (buffer-based)
     if (req.files && Object.keys(req.files).length > 0) {
       const fileFields = ['officialNotification', 'examDateNotice', 'syllabusFile', 'admitCardFile', 'answerKeyFile', 'resultFile', 'otherFile'];
 
@@ -431,8 +477,11 @@ const updateAnswer = async (req, res) => {
               await deleteFromCloudinary(answer[fieldName].cloudinaryId);
             }
 
-            // Upload new file to Cloudinary
-            const uploadResult = await uploadToCloudinary(file.path, 'answer-keys');
+            // Upload new file buffer to Cloudinary
+            const uploadResult = await uploadBufferToCloudinary(file.buffer, {
+              folder: 'answer-keys',
+              resourceType: file.mimetype.startsWith('image/') ? 'image' : 'raw'
+            });
 
             const fileType = file.mimetype.split('/')[1] || 'other';
 
@@ -445,16 +494,37 @@ const updateAnswer = async (req, res) => {
             };
 
             answer[fieldName] = fileData;
-
-            // Delete temporary file
-            const fs = require('fs');
-            if (fs.existsSync(file.path)) {
-              fs.unlinkSync(file.path);
-            }
           } catch (uploadError) {
-            console.error(`Error uploading file ${file.originalname}:`, uploadError);
+            // Silent fail for individual file uploads
           }
         }
+      }
+    }
+
+    // Parse arrays if they come as JSON strings
+    if (req.body.tags) {
+      if (typeof req.body.tags === 'string') {
+        try { req.body.tags = JSON.parse(req.body.tags); } catch (e) { req.body.tags = []; }
+      }
+    }
+    if (req.body.dynamicContent) {
+      if (typeof req.body.dynamicContent === 'string') {
+        try { req.body.dynamicContent = JSON.parse(req.body.dynamicContent); } catch (e) { req.body.dynamicContent = []; }
+      }
+    }
+    if (req.body.contentSections) {
+      if (typeof req.body.contentSections === 'string') {
+        try { req.body.contentSections = JSON.parse(req.body.contentSections); } catch (e) { req.body.contentSections = []; }
+      }
+    }
+    if (req.body.importantInstructions) {
+      if (typeof req.body.importantInstructions === 'string') {
+        try { req.body.importantInstructions = JSON.parse(req.body.importantInstructions); } catch (e) { req.body.importantInstructions = []; }
+      }
+    }
+    if (req.body.documentsRequired) {
+      if (typeof req.body.documentsRequired === 'string') {
+        try { req.body.documentsRequired = JSON.parse(req.body.documentsRequired); } catch (e) { req.body.documentsRequired = []; }
       }
     }
 
@@ -466,7 +536,11 @@ const updateAnswer = async (req, res) => {
 
     updateFields.forEach(field => {
       if (req.body[field] !== undefined) {
-        answer[field] = req.body[field];
+        if (field === 'alsoShowLink') {
+          answer[field] = req.body[field] === 'true' || req.body[field] === true;
+        } else {
+          answer[field] = req.body[field];
+        }
       }
     });
 
@@ -478,25 +552,10 @@ const updateAnswer = async (req, res) => {
       data: answer
     });
   } catch (error) {
-    console.error('Update answer error:', error);
-
-    // Cleanup uploaded files on error
-    if (req.files) {
-      const fs = require('fs');
-      for (const fieldName in req.files) {
-        const files = req.files[fieldName];
-        files.forEach(file => {
-          if (fs.existsSync(file.path)) {
-            fs.unlinkSync(file.path);
-          }
-        });
-      }
-    }
-
     return res.status(500).json({
       success: false,
       message: 'Failed to update answer',
-      error: error.message
+      error: process.env.NODE_ENV === 'development' ? error.message : 'Internal server error'
     });
   }
 };
@@ -566,11 +625,10 @@ const updateStatus = async (req, res) => {
       data: updatedAnswer
     });
   } catch (error) {
-    console.error('Update status error:', error);
     return res.status(500).json({
       success: false,
       message: 'Failed to update status',
-      error: error.message
+      error: process.env.NODE_ENV === 'development' ? error.message : 'Internal server error'
     });
   }
 };
@@ -611,7 +669,7 @@ const deleteAnswer = async (req, res) => {
         try {
           await deleteFromCloudinary(answer[fieldName].cloudinaryId);
         } catch (error) {
-          console.error(`Error deleting file ${answer[fieldName].cloudinaryId}:`, error);
+          // Silent fail for file deletion
         }
       }
     }
@@ -623,11 +681,10 @@ const deleteAnswer = async (req, res) => {
       message: 'Answer deleted successfully'
     });
   } catch (error) {
-    console.error('Delete answer error:', error);
     return res.status(500).json({
       success: false,
       message: 'Failed to delete answer',
-      error: error.message
+      error: process.env.NODE_ENV === 'development' ? error.message : 'Internal server error'
     });
   }
 };
@@ -660,11 +717,10 @@ const getAnswersByJobId = async (req, res) => {
       data: answers
     });
   } catch (error) {
-    console.error('Get answers by job ID error:', error);
     return res.status(500).json({
       success: false,
       message: 'Failed to fetch answers',
-      error: error.message
+      error: process.env.NODE_ENV === 'development' ? error.message : 'Internal server error'
     });
   }
 };
@@ -745,11 +801,10 @@ const getPublicAnswers = async (req, res) => {
       }
     });
   } catch (error) {
-    console.error('Get public answers error:', error);
     return res.status(500).json({
       success: false,
       message: 'Failed to fetch answers',
-      error: error.message
+      error: process.env.NODE_ENV === 'development' ? error.message : 'Internal server error'
     });
   }
 };
@@ -764,6 +819,7 @@ const getAllAnswersList = async (req, res) => {
       month,
       date,
       keyword,
+      type,
       sortBy = 'publishDate',
       order = 'desc'
     } = req.query;
@@ -772,6 +828,9 @@ const getAllAnswersList = async (req, res) => {
       status: 'verified',
       answerStatus: 'active'
     };
+
+    // Type filter
+    if (type) filter.type = type;
 
     // Search by year, month, date
     if (year || month || date) {
@@ -844,11 +903,10 @@ const getAllAnswersList = async (req, res) => {
     });
 
   } catch (error) {
-    console.error('Get all answers list error:', error);
     return res.status(500).json({
       success: false,
       message: 'Failed to fetch answers list',
-      error: error.message
+      error: process.env.NODE_ENV === 'development' ? error.message : 'Internal server error'
     });
   }
 };
@@ -976,11 +1034,10 @@ const getAvailableReferences = async (req, res) => {
       data: references
     });
   } catch (error) {
-    console.error('Get available references error:', error);
     return res.status(500).json({
       success: false,
       message: 'Failed to fetch references',
-      error: error.message
+      error: process.env.NODE_ENV === 'development' ? error.message : 'Internal server error'
     });
   }
 };
