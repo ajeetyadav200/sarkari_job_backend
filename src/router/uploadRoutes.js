@@ -5,10 +5,8 @@ const { AuthUser } = require('../middleware/authUser');
 
 const {
   uploadSingle,
-  uploadMultiple,
   uploadFields,
   deleteFile,
-  deleteMultipleFiles,
   getUploadConfig
 } = require('../controller/uploadController/uploadController');
 
@@ -133,14 +131,6 @@ router.use(AuthUser);
 router.post('/single', upload.single('file'), handleMulterError, uploadSingle);
 
 /**
- * @route   POST /api/upload/multiple
- * @desc    Upload multiple files
- * @access  Private
- * @body    files (form-data), folder (optional)
- */
-router.post('/multiple', upload.array('files', 10), handleMulterError, uploadMultiple);
-
-/**
  * @route   POST /api/upload/fields
  * @desc    Upload files with specific field names
  * @access  Private
@@ -155,13 +145,5 @@ router.post('/fields', dynamicFieldsUpload, handleMulterError, uploadFields);
  * @param   cloudinaryId - The Cloudinary public ID of the file
  */
 router.delete('/:cloudinaryId(*)', deleteFile);
-
-/**
- * @route   POST /api/upload/delete-multiple
- * @desc    Delete multiple files from Cloudinary
- * @access  Private
- * @body    { cloudinaryIds: ['id1', 'id2', ...] }
- */
-router.post('/delete-multiple', deleteMultipleFiles);
 
 module.exports = router;

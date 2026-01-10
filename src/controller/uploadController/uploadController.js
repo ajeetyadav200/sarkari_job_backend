@@ -184,80 +184,6 @@ const uploadSingle = async (req, res) => {
 };
 
 /**
- * Upload multiple files
- * POST /api/upload/multiple
- */
-const uploadMultiple = async (req, res) => {
-  try {
-    const files = req.files;
-    const { folder = 'other' } = req.body;
-
-    if (!files || files.length === 0) {
-      return res.status(400).json({
-        success: false,
-        message: 'No files provided'
-      });
-    }
-
-    const folderPath = UPLOAD_FOLDERS[folder] || UPLOAD_FOLDERS['other'];
-    const results = [];
-    const errors = [];
-
-    // Process each file
-    for (let i = 0; i < files.length; i++) {
-      const file = files[i];
-      const validation = validateFile(file);
-
-      if (!validation.valid) {
-        errors.push({
-          fileName: file.originalname,
-          errors: validation.errors
-        });
-        continue;
-      }
-
-      try {
-        const result = await uploadBufferToCloudinary(file.buffer, {
-          folder: folderPath,
-          resourceType: validation.resourceType
-        });
-
-        results.push({
-          fileName: file.originalname,
-          fileUrl: result.url,
-          cloudinaryId: result.cloudinaryId,
-          fileType: validation.fileType,
-          format: result.format,
-          size: result.bytes,
-          uploadedAt: new Date().toISOString()
-        });
-      } catch (uploadError) {
-        errors.push({
-          fileName: file.originalname,
-          errors: [uploadError.message]
-        });
-      }
-    }
-
-    return res.status(200).json({
-      success: true,
-      message: `${results.length} file(s) uploaded successfully${errors.length > 0 ? `, ${errors.length} failed` : ''}`,
-      data: {
-        uploaded: results,
-        failed: errors
-      }
-    });
-
-  } catch (error) {
-    return res.status(500).json({
-      success: false,
-      message: 'Failed to upload files',
-      error: process.env.NODE_ENV === 'development' ? error.message : 'Internal server error'
-    });
-  }
-};
-
-/**
  * Upload files with specific field names (for forms with multiple file inputs)
  * POST /api/upload/fields
  */
@@ -386,38 +312,6 @@ const deleteFile = async (req, res) => {
 };
 
 /**
- * Delete multiple files from Cloudinary
- * POST /api/upload/delete-multiple
- */
-const deleteMultipleFiles = async (req, res) => {
-  try {
-    const { cloudinaryIds } = req.body;
-
-    if (!cloudinaryIds || !Array.isArray(cloudinaryIds) || cloudinaryIds.length === 0) {
-      return res.status(400).json({
-        success: false,
-        message: 'Array of Cloudinary IDs is required'
-      });
-    }
-
-    const results = await cloudinary.api.delete_resources(cloudinaryIds);
-
-    return res.status(200).json({
-      success: true,
-      message: 'Files deletion processed',
-      data: results
-    });
-
-  } catch (error) {
-    return res.status(500).json({
-      success: false,
-      message: 'Failed to delete files',
-      error: process.env.NODE_ENV === 'development' ? error.message : 'Internal server error'
-    });
-  }
-};
-
-/**
  * Get upload configuration (for frontend)
  * GET /api/upload/config
  */
@@ -444,10 +338,8 @@ const getUploadConfig = async (req, res) => {
 
 module.exports = {
   uploadSingle,
-  uploadMultiple,
   uploadFields,
   deleteFile,
-  deleteMultipleFiles,
   getUploadConfig,
   // Export utilities for use in other controllers
   uploadBufferToCloudinary,
