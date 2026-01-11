@@ -4,6 +4,34 @@
 // controller/jobcontroller/jobController.js
 const { Job, jobStatusEnum } = require('../../models/job/letestJob');
 const JobValidator = require('../../utils/jobValidation');
+const { cloudinary } = require('../../config/cloudinary');
+
+/**
+ * Delete file from Cloudinary
+ */
+const deleteFromCloudinary = async (cloudinaryId) => {
+  try {
+    if (!cloudinaryId) return null;
+    const result = await cloudinary.uploader.destroy(cloudinaryId);
+    return result;
+  } catch (error) {
+    throw new Error(`Failed to delete file: ${error.message}`);
+  }
+};
+
+/**
+ * Map file types to valid enum values
+ */
+const mapFileType = (type) => {
+  if (!type) return 'other';
+  const lowerType = type.toLowerCase();
+  if (['pdf', 'jpg', 'jpeg', 'png', 'doc', 'docx'].includes(lowerType)) {
+    return lowerType;
+  }
+  if (lowerType === 'image' || lowerType === 'gif' || lowerType === 'webp') return 'png';
+  if (lowerType === 'document') return 'pdf';
+  return 'other';
+};
 
 class JobController {
   // Create Job
@@ -72,6 +100,31 @@ class JobController {
         createdBy: creatorSnapshot,
         status: jobStatusEnum.PENDING
       };
+
+      // ========== HANDLE FILE UPLOADS (URLs from /api/upload/single) ==========
+      const fileFields = [
+        'officialNotification',
+        'examDateNotice',
+        'syllabusFile',
+        'admitCardFile',
+        'answerKeyFile',
+        'resultFile',
+        'applicationForm',
+        'otherFile'
+      ];
+
+      fileFields.forEach(fieldName => {
+        const fileData = req.body[fieldName];
+        if (fileData && fileData.fileUrl) {
+          jobData[fieldName] = {
+            fileName: fileData.fileName || '',
+            fileUrl: fileData.fileUrl,
+            cloudinaryId: fileData.cloudinaryId || '',
+            fileType: mapFileType(fileData.fileType),
+            uploadedAt: fileData.uploadedAt || new Date()
+          };
+        }
+      });
 
       ('Creating job with dynamic content:', {
         hasDynamicContent: jobData.dynamicContent.length > 0,
@@ -299,6 +352,51 @@ class JobController {
         }
       });
 
+      // ========== HANDLE FILE UPLOADS (URLs from /api/upload/single) ==========
+      const fileFields = [
+        'officialNotification',
+        'examDateNotice',
+        'syllabusFile',
+        'admitCardFile',
+        'answerKeyFile',
+        'resultFile',
+        'applicationForm',
+        'otherFile'
+      ];
+
+      for (const fieldName of fileFields) {
+        if (req.body[fieldName] !== undefined) {
+          if (req.body[fieldName] && req.body[fieldName].fileUrl) {
+            // New file uploaded - delete old file if different
+            if (job[fieldName] && job[fieldName].cloudinaryId &&
+                job[fieldName].cloudinaryId !== req.body[fieldName].cloudinaryId) {
+              try {
+                await deleteFromCloudinary(job[fieldName].cloudinaryId);
+              } catch (err) {
+                // Silent fail
+              }
+            }
+            job[fieldName] = {
+              fileName: req.body[fieldName].fileName || '',
+              fileUrl: req.body[fieldName].fileUrl,
+              cloudinaryId: req.body[fieldName].cloudinaryId || '',
+              fileType: mapFileType(req.body[fieldName].fileType),
+              uploadedAt: req.body[fieldName].uploadedAt || new Date()
+            };
+          } else if (req.body[fieldName] === null) {
+            // File removed
+            if (job[fieldName] && job[fieldName].cloudinaryId) {
+              try {
+                await deleteFromCloudinary(job[fieldName].cloudinaryId);
+              } catch (err) {
+                // Silent fail
+              }
+            }
+            job[fieldName] = null;
+          }
+        }
+      }
+
       ('Job updated with dynamic content:', {
         hasDynamicContent: job.dynamicContent?.length > 0,
         hasContentSections: job.contentSections?.length > 0
@@ -415,9 +513,31 @@ class JobController {
           message: 'You do not have permission to delete this job'
         });
       }
-      
+
+      // Delete all uploaded files from Cloudinary
+      const fileFields = [
+        'officialNotification',
+        'examDateNotice',
+        'syllabusFile',
+        'admitCardFile',
+        'answerKeyFile',
+        'resultFile',
+        'applicationForm',
+        'otherFile'
+      ];
+
+      for (const fieldName of fileFields) {
+        if (job[fieldName] && job[fieldName].cloudinaryId) {
+          try {
+            await deleteFromCloudinary(job[fieldName].cloudinaryId);
+          } catch (error) {
+            // Silent fail
+          }
+        }
+      }
+
       await job.deleteOne();
-      
+
       return res.status(200).json({
         success: true,
         message: 'Job deleted successfully'

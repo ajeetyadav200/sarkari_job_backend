@@ -729,7 +729,7 @@ const updateGovernmentService = async (req, res) => {
     }
 
     // Handle file data
-    const fileFields = ['officialNotification', 'applicationForm', 'instructionSheet', 'guidelinesFile', 'sampleForm', 'otherFile1', 'otherFile2'];
+    const fileFields = ['officialNotification', 'applicationForm', 'instructionSheet', 'guidelinesFile', 'sampleForm', 'syllabusFile', 'admitCardFile', 'resultFile', 'examDateNotice', 'otherFile1', 'otherFile2', 'otherFile3'];
 
     for (const fieldName of fileFields) {
       if (req.body[fieldName] !== undefined) {
@@ -951,7 +951,7 @@ const deleteGovernmentService = async (req, res) => {
     }
 
     // Delete all uploaded files from Cloudinary
-    const fileFields = ['officialNotification', 'applicationForm', 'instructionSheet', 'guidelinesFile', 'sampleForm', 'otherFile1', 'otherFile2'];
+    const fileFields = ['officialNotification', 'applicationForm', 'instructionSheet', 'guidelinesFile', 'sampleForm', 'syllabusFile', 'admitCardFile', 'resultFile', 'examDateNotice', 'otherFile1', 'otherFile2', 'otherFile3'];
 
     for (const fieldName of fileFields) {
       if (service[fieldName] && service[fieldName].cloudinaryId) {

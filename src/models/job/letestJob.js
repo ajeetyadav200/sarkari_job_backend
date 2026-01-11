@@ -40,6 +40,33 @@ const categoryEnum = {
   PH: 'ph'
 };
 
+// Sub-schema for uploaded files
+const uploadedFileSchema = new mongoose.Schema({
+  fileName: {
+    type: String,
+    required: true,
+    trim: true
+  },
+  fileUrl: {
+    type: String,
+    required: true,
+    trim: true
+  },
+  cloudinaryId: {
+    type: String,
+    trim: true
+  },
+  fileType: {
+    type: String,
+    enum: ['pdf', 'jpg', 'jpeg', 'png', 'doc', 'docx', 'other'],
+    default: 'pdf'
+  },
+  uploadedAt: {
+    type: Date,
+    default: Date.now
+  }
+}, { _id: false });
+
 // Sub-schema for important dates (from image 2.png)
 const importantDateSchema = new mongoose.Schema({
   // From image 2.png fields
@@ -52,7 +79,7 @@ const importantDateSchema = new mongoose.Schema({
   examDate: Date,
   answerKeyDate: Date,
   resultDate: Date,
-  
+
   // Additional fields from image
   formulationDate: Date, // Appears multiple times
   ageOnDate: Date,
@@ -324,6 +351,16 @@ const jobSchema = new mongoose.Schema({
     type: [String],
     default: []
   },
+
+  // ========== FILE UPLOADS ==========
+  officialNotification: uploadedFileSchema,
+  examDateNotice: uploadedFileSchema,
+  syllabusFile: uploadedFileSchema,
+  admitCardFile: uploadedFileSchema,
+  answerKeyFile: uploadedFileSchema,
+  resultFile: uploadedFileSchema,
+  applicationForm: uploadedFileSchema,
+  otherFile: uploadedFileSchema,
 
   // ========== Status and Approval ==========
   status: {
