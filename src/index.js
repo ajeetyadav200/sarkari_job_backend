@@ -15,6 +15,7 @@ const resultRoutes = require('./router/resultRoutes');
 const admissionRoutes = require('./router/admissionRoutes');
 const answerRoutes = require('./router/answerRoutes');
 const uploadRoutes = require('./router/uploadRoutes');
+const governmentServiceRoutes = require('./router/governmentServiceRoutes');
 
 // PORT
 const PORT = process.env.PORT || 7777;
@@ -111,6 +112,7 @@ app.use('/api/results', resultRoutes);
 app.use('/api/admissions', admissionRoutes);
 app.use('/api/answers', answerRoutes);
 app.use('/api/upload', uploadRoutes);
+app.use('/api/government-services', governmentServiceRoutes);
 
 
 // Health check route (add this back)
