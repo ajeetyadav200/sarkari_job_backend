@@ -3,10 +3,12 @@
 
 const User = require("../models/auth");
 const IPAttempt = require("../models/IPAttempt");
-const { 
-    validateSignUpData, 
-    validateLoginData, 
-    validateAdminCreationData 
+const otpService = require("../services/otpService");
+const bcrypt = require("bcryptjs");
+const {
+    validateSignUpData,
+    validateLoginData,
+    validateAdminCreationData
 } = require("../utils/validation");
 
 // Generate token and send response
@@ -62,13 +64,13 @@ const getClientIP = (req) => {
 exports.adminSignup = async (req, res) => {
     try {
        
-        const { firstName, lastName, email, password } = req.body;
+        const { firstName, lastName, email, password ,phone } = req.body;
 
         // Basic presence check
-        if (!firstName || !lastName || !email || !password) {
+        if (!firstName || !lastName || !email || !password || !phone) {
             return res.status(400).json({
                 success: false,
-                message: "firstName, lastName, email and password are required"
+                message: "firstName, lastName, email , phone and password are required"
             });
         }
 
@@ -103,6 +105,7 @@ exports.adminSignup = async (req, res) => {
             lastName: lastName.trim(),
             email: normalizedEmail,
             password,
+            phone: phone.trim(),
             role: "admin"
         });
 
@@ -146,13 +149,11 @@ exports.adminSignup = async (req, res) => {
     }
 };
 
-// @desc    Login for all users
+// @desc    Login for all users - Step 1: Email/Password validation & OTP generation
 // @route   POST /api/auth/login
 // @access  Public
 exports.login = async (req, res) => {
     try {
-       
-        
         // Ensure body exists
         if (!req.body || Object.keys(req.body).length === 0) {
             return res.status(400).json({
@@ -172,7 +173,6 @@ exports.login = async (req, res) => {
         }
 
         const ipAddress = getClientIP(req);
-     
 
         // Check if IP is locked first
         const isIPLocked = await IPAttempt.isIPLocked(ipAddress);
@@ -185,12 +185,11 @@ exports.login = async (req, res) => {
 
         // Find user with password
         const user = await User.findOne({ email: email.toLowerCase() }).select('+password');
-        
-        
+
         if (!user) {
-            // Case 1: Email doesn't exist - increment IP attempt
+            // Email doesn't exist - increment IP attempt
             await IPAttempt.incrementIPAttempt(ipAddress);
-            
+
             return res.status(401).json({
                 success: false,
                 message: "Invalid email or password"
@@ -214,20 +213,55 @@ exports.login = async (req, res) => {
             });
         }
 
+        // Check if phone number exists
+        if (!user.phone) {
+            return res.status(400).json({
+                success: false,
+                message: "No phone number registered with this account. Please contact administrator."
+            });
+        }
+
         // Enhanced password check with security tracking
         try {
             const isPasswordValid = await user.comparePassword(password);
-            
+
             if (isPasswordValid) {
-                // Reset IP attempts on successful login
+                // Reset IP attempts after successful password validation
                 await IPAttempt.resetIPAttempts(ipAddress);
-                
-                // Update last login
-                user.lastLogin = new Date();
-                await user.save();
-                
-                
-                return sendTokenResponse(user, 200, res, "Login successful");
+
+                // Generate 6-digit OTP
+                const otp = Math.floor(100000 + Math.random() * 900000).toString();
+
+                // Hash OTP with bcrypt for frontend storage
+                const hashedOTP = await bcrypt.hash(otp, 10);
+
+                // Calculate expiry time (10 minutes from now)
+                const otpExpiryTime = Date.now() + 10 * 60 * 1000;
+
+                // Send OTP via MSG91
+                try {
+                    await otpService.sendOTP(user.phone, otp, user.firstName);
+
+                    return res.status(200).json({
+                        success: true,
+                        message: "OTP sent successfully to your registered mobile number",
+                        data: {
+                            userId: user._id,
+                            hashedOTP: hashedOTP, // Send bcrypt hashed OTP to store in localStorage
+                            otpExpiry: otpExpiryTime, // Send expiry timestamp
+                            maskedPhone: `******${user.phone.slice(-4)}`,
+                            otpExpiresIn: 10 // minutes
+                        }
+                    });
+                } catch (smsError) {
+                    console.error("SMS Error:", smsError);
+
+                    return res.status(500).json({
+                        success: false,
+                        message: "Failed to send OTP. Please try again later.",
+                        error: process.env.NODE_ENV === 'development' ? smsError.message : undefined
+                    });
+                }
             }
         } catch (error) {
             // Handle security-related errors from comparePassword
@@ -237,20 +271,20 @@ exports.login = async (req, res) => {
                     message: error.message.replace('ACCOUNT_LOCKED: ', '')
                 });
             }
-            
+
             if (error.message.includes('INVALID_PASSWORD')) {
                 return res.status(401).json({
                     success: false,
                     message: error.message.replace('INVALID_PASSWORD: ', '')
                 });
             }
-            
+
             throw error;
         }
 
     } catch (error) {
         console.error("Login error:", error);
-        
+
         // Handle specific security errors already handled above
         if (error.message.includes('ACCOUNT_LOCKED') || error.message.includes('INVALID_PASSWORD')) {
             return; // Already handled
@@ -259,6 +293,146 @@ exports.login = async (req, res) => {
         return res.status(500).json({
             success: false,
             message: "Internal server error during login"
+        });
+    }
+};
+
+// @desc    Verify OTP and complete login - Step 2
+// @route   POST /api/auth/verify-otp
+// @access  Public
+exports.verifyOTP = async (req, res) => {
+    try {
+        const { userId, otp, hashedOTP, otpExpiry } = req.body;
+
+        // Validate input
+        if (!userId || !otp || !hashedOTP || !otpExpiry) {
+            return res.status(400).json({
+                success: false,
+                message: "User ID, OTP, hashed OTP, and expiry are required"
+            });
+        }
+
+        // Validate OTP format (6 digits)
+        if (!/^\d{6}$/.test(otp)) {
+            return res.status(400).json({
+                success: false,
+                message: "OTP must be a 6-digit number"
+            });
+        }
+
+        // Check if OTP expired
+        if (Date.now() > otpExpiry) {
+            return res.status(400).json({
+                success: false,
+                message: "OTP has expired. Please request a new one"
+            });
+        }
+
+        // Find user
+        const user = await User.findById(userId);
+        if (!user) {
+            return res.status(404).json({
+                success: false,
+                message: "User not found"
+            });
+        }
+
+        // Verify OTP by comparing with bcrypt hashed value
+        const isOTPValid = await bcrypt.compare(otp, hashedOTP);
+
+        if (isOTPValid) {
+            // Update last login
+            user.lastLogin = new Date();
+            await user.save();
+
+            // Send token response
+            return sendTokenResponse(user, 200, res, "Login successful");
+        } else {
+            return res.status(400).json({
+                success: false,
+                message: "Invalid OTP. Please try again"
+            });
+        }
+
+    } catch (error) {
+        console.error("OTP verification error:", error);
+
+        return res.status(500).json({
+            success: false,
+            message: "Internal server error during OTP verification"
+        });
+    }
+};
+
+// @desc    Resend OTP
+// @route   POST /api/auth/resend-otp
+// @access  Public
+exports.resendOTP = async (req, res) => {
+    try {
+        const { userId } = req.body;
+
+        if (!userId) {
+            return res.status(400).json({
+                success: false,
+                message: "User ID is required"
+            });
+        }
+
+        // Find user
+        const user = await User.findById(userId);
+        if (!user) {
+            return res.status(404).json({
+                success: false,
+                message: "User not found"
+            });
+        }
+
+        // Check if phone exists
+        if (!user.phone) {
+            return res.status(400).json({
+                success: false,
+                message: "No phone number registered with this account"
+            });
+        }
+
+        // Generate new 6-digit OTP
+        const otp = Math.floor(100000 + Math.random() * 900000).toString();
+
+        // Hash OTP with bcrypt for frontend storage
+        const hashedOTP = await bcrypt.hash(otp, 10);
+
+        // Calculate expiry time (10 minutes from now)
+        const otpExpiryTime = Date.now() + 10 * 60 * 1000;
+
+        // Send OTP
+        try {
+            await otpService.sendOTP(user.phone, otp, user.firstName);
+
+            return res.status(200).json({
+                success: true,
+                message: "OTP resent successfully",
+                data: {
+                    hashedOTP: hashedOTP, // Send bcrypt hashed OTP
+                    otpExpiry: otpExpiryTime, // Send expiry timestamp
+                    maskedPhone: `******${user.phone.slice(-4)}`,
+                    otpExpiresIn: 10
+                }
+            });
+        } catch (smsError) {
+            console.error("SMS Error:", smsError);
+
+            return res.status(500).json({
+                success: false,
+                message: "Failed to resend OTP. Please try again later."
+            });
+        }
+
+    } catch (error) {
+        console.error("Resend OTP error:", error);
+
+        return res.status(500).json({
+            success: false,
+            message: "Internal server error while resending OTP"
         });
     }
 };

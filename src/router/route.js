@@ -3,6 +3,8 @@ const express = require('express');
 const {
     adminSignup,
     login,
+    verifyOTP,
+    resendOTP,
     createUser,
     getMe,
     logout,
@@ -19,6 +21,8 @@ const router = express.Router();
 // Public routes
 router.post('/admin/signup', adminSignup);
 router.post('/login', login);
+router.post('/verify-otp', verifyOTP);
+router.post('/resend-otp', resendOTP);
 
 // Protected routes
 router.post('/logout', AuthUser, logout);
