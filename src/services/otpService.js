@@ -34,31 +34,39 @@ class OTPService {
             // MSG91 Flow API endpoint with template
             const url = `${this.baseURL}/flow/`;
 
+            // MSG91 Flow API - variable name must match template exactly
+            // Template: {#var#} means use "var" as key
             const payload = {
                 template_id: this.templateId,
-                sender: this.senderId,
                 short_url: "0",
-                mobiles: phoneWithCountryCode,
-                var: otp // OTP variable matching your template ##var##
+                realTimeResponse: "1",
+                recipients: [
+                    {
+                        mobiles: phoneWithCountryCode,
+                        "var": String(otp)
+                    }
+                ]
             };
 
             const response = await axios.post(url, payload, {
                 headers: {
                     'authkey': this.authKey,
-                    'content-type': 'application/json'
+                    'Content-Type': 'application/json'
                 }
             });
 
-            console.log(`OTP sent successfully to ${phoneWithCountryCode}`);
+            // Check if MSG91 returned an error in the response body
+            if (response.data.type === 'error') {
+                throw new Error(`MSG91 Error: ${response.data.message || 'Unknown error'}`);
+            }
+
             return {
                 success: true,
                 message: 'OTP sent successfully',
-                requestId: response.data.request_id || response.data.type
+                requestId: response.data.request_id || response.data.message
             };
 
         } catch (error) {
-            console.error('MSG91 OTP Service Error:', error.response?.data || error.message);
-
             // Return more specific error messages
             if (error.response) {
                 throw new Error(`SMS Service Error: ${error.response.data.message || 'Failed to send OTP'}`);
@@ -101,7 +109,7 @@ class OTPService {
                 route: '4',
                 country: '91',
                 sms: [{
-                    message: `Your OTP is ${otp}. Valid for 10 minutes. - Naukari Store`,
+                    message: `${otp} is the OTP for your login at naukaristore.com. In case you have not requested this, please contact us at info@naukaristore.com`,
                     to: [phoneWithCountryCode]
                 }]
             };
@@ -122,7 +130,6 @@ class OTPService {
             };
 
         } catch (error) {
-            console.error('MSG91 Flow Error:', error.response?.data || error.message);
             throw new Error(`Failed to send OTP: ${error.message}`);
         }
     }
