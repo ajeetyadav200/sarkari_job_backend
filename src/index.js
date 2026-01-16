@@ -17,6 +17,7 @@ const answerRoutes = require('./router/answerRoutes');
 const uploadRoutes = require('./router/uploadRoutes');
 const governmentServiceRoutes = require('./router/governmentServiceRoutes');
 const cyberCafeRoutes = require('./router/cyberCafeRoutes');
+const adminCyberCafeRoutes = require('./router/adminCyberCafeRoutes');
 
 // PORT
 const PORT = process.env.PORT || 7777;
@@ -115,6 +116,7 @@ app.use('/api/answers', answerRoutes);
 app.use('/api/upload', uploadRoutes);
 app.use('/api/government-services', governmentServiceRoutes);
 app.use('/api/cyber-cafe', cyberCafeRoutes);
+app.use('/api/admin/cyber-cafes', adminCyberCafeRoutes);
 
 
 // Health check route (add this back)
