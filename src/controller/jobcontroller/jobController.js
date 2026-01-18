@@ -4,20 +4,7 @@
 // controller/jobcontroller/jobController.js
 const { Job, jobStatusEnum } = require('../../models/job/letestJob');
 const JobValidator = require('../../utils/jobValidation');
-const { cloudinary } = require('../../config/cloudinary');
-
-/**
- * Delete file from Cloudinary
- */
-const deleteFromCloudinary = async (cloudinaryId) => {
-  try {
-    if (!cloudinaryId) return null;
-    const result = await cloudinary.uploader.destroy(cloudinaryId);
-    return result;
-  } catch (error) {
-    throw new Error(`Failed to delete file: ${error.message}`);
-  }
-};
+const { deleteFromCloudinary } = require('../../config/cloudinary');
 
 /**
  * Map file types to valid enum values

@@ -1,6 +1,6 @@
 const Answer = require('../../models/answer/answerSchema');
 const { Job } = require('../../models/job/letestJob');
-const { cloudinary } = require('../../config/cloudinary');
+const { cloudinary, deleteFromCloudinary } = require('../../config/cloudinary');
 const mongoose = require('mongoose');
 const streamifier = require('streamifier');
 
@@ -45,18 +45,6 @@ const uploadBufferToCloudinary = (buffer, options = {}) => {
 
     streamifier.createReadStream(buffer).pipe(uploadStream);
   });
-};
-
-/**
- * Delete file from Cloudinary
- */
-const deleteFromCloudinary = async (cloudinaryId) => {
-  try {
-    const result = await cloudinary.uploader.destroy(cloudinaryId);
-    return result;
-  } catch (error) {
-    throw new Error(`Failed to delete file: ${error.message}`);
-  }
 };
 
 // Create Answer

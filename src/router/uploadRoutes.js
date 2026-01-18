@@ -139,10 +139,19 @@ router.post('/single', upload.single('file'), handleMulterError, uploadSingle);
 router.post('/fields', dynamicFieldsUpload, handleMulterError, uploadFields);
 
 /**
- * @route   DELETE /api/upload/:cloudinaryId
- * @desc    Delete a file from Cloudinary
+ * @route   POST /api/upload/delete
+ * @desc    Delete a file from Cloudinary (recommended - handles IDs with slashes)
  * @access  Private
- * @param   cloudinaryId - The Cloudinary public ID of the file (URL encoded)
+ * @body    { cloudinaryId: string, resourceType?: 'image' | 'raw' | 'video' }
+ */
+router.post('/delete', deleteFile);
+
+/**
+ * @route   DELETE /api/upload/:cloudinaryId
+ * @desc    Delete a file from Cloudinary (URL encode the ID if it has slashes)
+ * @access  Private
+ * @param   cloudinaryId - The Cloudinary public ID (URL encoded)
+ * @query   type - Resource type: 'image' | 'raw' | 'video'
  */
 router.delete('/:cloudinaryId', deleteFile);
 

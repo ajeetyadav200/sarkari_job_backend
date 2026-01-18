@@ -49,21 +49,36 @@ const MAX_FILE_SIZES = {
 };
 
 /**
- * Upload file buffer to Cloudinary using stream
+ * Upload file buffer to Cloudinary using stream (OPTIMIZED)
  * @param {Buffer} buffer - File buffer
  * @param {Object} options - Upload options
  * @returns {Promise<Object>} - Upload result
  */
 const uploadBufferToCloudinary = (buffer, options = {}) => {
   return new Promise((resolve, reject) => {
+    const isImage = options.resourceType === 'image';
+
     const uploadStream = cloudinary.uploader.upload_stream(
       {
         folder: options.folder || 'uploads',
         resource_type: options.resourceType || 'auto',
         public_id: options.publicId || undefined,
-        use_filename: true,
+        // SPEED OPTIMIZATIONS
+        use_filename: false,            // Skip filename processing
         unique_filename: true,
         overwrite: false,
+        eager_async: true,              // Don't wait for transformations
+        invalidate: false,              // Skip CDN invalidation
+        async: true,                    // Use async upload mode
+        // Skip unnecessary processing
+        exif: false,                    // Don't extract EXIF data
+        colors: false,                  // Don't extract colors
+        faces: false,                   // Don't detect faces
+        image_metadata: false,          // Don't extract image metadata
+        phash: false,                   // Don't compute perceptual hash
+        ...(isImage && {
+          quality: 'auto:eco',          // Faster compression (eco vs good)
+        }),
         ...options.cloudinaryOptions
       },
       (error, result) => {
@@ -186,6 +201,7 @@ const uploadSingle = async (req, res) => {
 /**
  * Upload files with specific field names (for forms with multiple file inputs)
  * POST /api/upload/fields
+ * OPTIMIZED: Uses Promise.all for parallel uploads
  */
 const uploadFields = async (req, res) => {
   try {
@@ -203,7 +219,9 @@ const uploadFields = async (req, res) => {
     const results = {};
     const errors = [];
 
-    // Process each field
+    // Prepare all upload tasks for parallel execution
+    const uploadTasks = [];
+
     for (const fieldName of Object.keys(files)) {
       const fileArray = files[fieldName];
 
@@ -220,31 +238,48 @@ const uploadFields = async (req, res) => {
           continue;
         }
 
-        try {
-          const result = await uploadBufferToCloudinary(file.buffer, {
+        // Add to upload tasks array for parallel processing
+        uploadTasks.push({
+          fieldName,
+          file,
+          customName,
+          validation,
+          promise: uploadBufferToCloudinary(file.buffer, {
             folder: folderPath,
             resourceType: validation.resourceType
-          });
-
-          results[fieldName] = {
-            fileName: customName || file.originalname,
-            originalName: file.originalname,
-            fileUrl: result.url,
-            cloudinaryId: result.cloudinaryId,
-            fileType: validation.fileType,
-            format: result.format,
-            size: result.bytes,
-            uploadedAt: new Date().toISOString()
-          };
-        } catch (uploadError) {
-          errors.push({
-            fieldName,
-            fileName: file.originalname,
-            errors: [uploadError.message]
-          });
-        }
+          })
+        });
       }
     }
+
+    // Execute all uploads in parallel
+    const uploadResults = await Promise.allSettled(
+      uploadTasks.map(task => task.promise)
+    );
+
+    // Process results
+    uploadResults.forEach((result, index) => {
+      const task = uploadTasks[index];
+
+      if (result.status === 'fulfilled') {
+        results[task.fieldName] = {
+          fileName: task.customName || task.file.originalname,
+          originalName: task.file.originalname,
+          fileUrl: result.value.url,
+          cloudinaryId: result.value.cloudinaryId,
+          fileType: task.validation.fileType,
+          format: result.value.format,
+          size: result.value.bytes,
+          uploadedAt: new Date().toISOString()
+        };
+      } else {
+        errors.push({
+          fieldName: task.fieldName,
+          fileName: task.file.originalname,
+          errors: [result.reason?.message || 'Upload failed']
+        });
+      }
+    });
 
     return res.status(200).json({
       success: true,
@@ -267,10 +302,14 @@ const uploadFields = async (req, res) => {
 /**
  * Delete file from Cloudinary
  * DELETE /api/upload/:cloudinaryId
+ * or POST /api/upload/delete (with body)
  */
 const deleteFile = async (req, res) => {
   try {
-    const { cloudinaryId } = req.params;
+    // Support both URL param and body for cloudinaryId
+    let cloudinaryId = req.params.cloudinaryId || req.body.cloudinaryId;
+    let resourceType = req.query.type || req.body.resourceType;
+    const fileUrl = req.body.fileUrl; // Optional: pass fileUrl to detect type
 
     if (!cloudinaryId) {
       return res.status(400).json({
@@ -282,27 +321,66 @@ const deleteFile = async (req, res) => {
     // Decode the cloudinaryId (it may be URL encoded)
     const decodedId = decodeURIComponent(cloudinaryId);
 
-    const result = await cloudinary.uploader.destroy(decodedId);
+    // Auto-detect resource type from fileUrl if provided
+    if (!resourceType && fileUrl) {
+      if (fileUrl.includes('/raw/upload/')) {
+        resourceType = 'raw';
+      } else if (fileUrl.includes('/video/upload/')) {
+        resourceType = 'video';
+      } else {
+        resourceType = 'image';
+      }
+    }
 
-    if (result.result === 'ok') {
+    // Try all resource types to ensure deletion
+    // Cloudinary sometimes returns 'ok' even if file doesn't exist for that type
+    const typesToTry = resourceType
+      ? [resourceType, 'raw', 'image', 'video'].filter((v, i, a) => a.indexOf(v) === i)
+      : ['raw', 'image', 'video']; // Try raw first (PDFs are common)
+
+    let deleted = false;
+    let lastResult = null;
+
+    for (const type of typesToTry) {
+      try {
+        const result = await cloudinary.uploader.destroy(decodedId, {
+          resource_type: type,
+          invalidate: true
+        });
+        lastResult = result;
+
+        if (result.result === 'ok') {
+          // Verify deletion by checking if resource exists
+          deleted = true;
+          console.log(`File deleted as ${type}:`, decodedId);
+          break;
+        }
+      } catch (err) {
+        // Continue trying other types
+        console.log(`Delete attempt as ${type} failed:`, err.message);
+      }
+    }
+
+    if (deleted) {
       return res.status(200).json({
         success: true,
         message: 'File deleted successfully'
       });
-    } else if (result.result === 'not found') {
+    } else if (lastResult?.result === 'not found') {
       return res.status(404).json({
         success: false,
-        message: 'File not found'
+        message: 'File not found on Cloudinary'
       });
     } else {
       return res.status(400).json({
         success: false,
         message: 'Failed to delete file',
-        result: result.result
+        result: lastResult?.result
       });
     }
 
   } catch (error) {
+    console.error('Delete file error:', error);
     return res.status(500).json({
       success: false,
       message: 'Failed to delete file',

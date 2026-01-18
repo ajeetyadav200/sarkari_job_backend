@@ -5,21 +5,8 @@ const {
   serviceTypeEnum,
   serviceCategoryEnum
 } = require('../../models/government/governmentServiceSchema');
-const { cloudinary } = require('../../config/cloudinary');
+const { deleteFromCloudinary } = require('../../config/cloudinary');
 const mongoose = require('mongoose');
-
-/**
- * Delete file from Cloudinary
- */
-const deleteFromCloudinary = async (cloudinaryId) => {
-  try {
-    if (!cloudinaryId) return null;
-    const result = await cloudinary.uploader.destroy(cloudinaryId);
-    return result;
-  } catch (error) {
-    throw new Error(`Failed to delete file: ${error.message}`);
-  }
-};
 
 /**
  * Map file types to valid enum values

@@ -1,11 +1,28 @@
 const cloudinary = require('cloudinary').v2;
 
-// Configure Cloudinary
+// Configure Cloudinary with optimized settings
 cloudinary.config({
   cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
   api_key: process.env.CLOUDINARY_API_KEY,
-  api_secret: process.env.CLOUDINARY_API_SECRET
+  api_secret: process.env.CLOUDINARY_API_SECRET,
+  secure: true
 });
+
+// Optimized upload options for faster uploads
+const UPLOAD_OPTIMIZATION = {
+  // Image optimization presets
+  image: {
+    quality: 'auto:good',        // Auto quality optimization
+    fetch_format: 'auto',        // Auto format (webp for supported browsers)
+    flags: 'attachment',         // Faster upload processing
+    eager_async: true,           // Process transformations asynchronously
+  },
+  // PDF/Document options
+  document: {
+    resource_type: 'raw',
+    flags: 'attachment',
+  }
+};
 
 // Verify Cloudinary connection
 const verifyCloudinaryConnection = async () => {
@@ -48,12 +65,43 @@ const uploadToCloudinary = async (filePath, folder = 'answer-keys') => {
   }
 };
 
-// Delete file from Cloudinary
-const deleteFromCloudinary = async (cloudinaryId) => {
+// Delete file from Cloudinary (handles all resource types: image, raw, video)
+const deleteFromCloudinary = async (cloudinaryId, resourceType = null) => {
   try {
-    const result = await cloudinary.uploader.destroy(cloudinaryId);
+    if (!cloudinaryId) return { result: 'skipped', reason: 'No cloudinaryId provided' };
+
+    // If resource type is specified, try that first
+    if (resourceType) {
+      const result = await cloudinary.uploader.destroy(cloudinaryId, {
+        resource_type: resourceType,
+        invalidate: true
+      });
+      if (result.result === 'ok') return result;
+    }
+
+    // Try as image first (most common)
+    let result = await cloudinary.uploader.destroy(cloudinaryId, {
+      resource_type: 'image',
+      invalidate: true
+    });
+    if (result.result === 'ok') return result;
+
+    // Try as raw (PDFs, docs)
+    result = await cloudinary.uploader.destroy(cloudinaryId, {
+      resource_type: 'raw',
+      invalidate: true
+    });
+    if (result.result === 'ok') return result;
+
+    // Try as video
+    result = await cloudinary.uploader.destroy(cloudinaryId, {
+      resource_type: 'video',
+      invalidate: true
+    });
+
     return result;
   } catch (error) {
+    console.error(`Failed to delete file ${cloudinaryId}:`, error.message);
     throw new Error(`Failed to delete file from Cloudinary: ${error.message}`);
   }
 };
@@ -74,5 +122,6 @@ module.exports = {
   uploadToCloudinary,
   deleteFromCloudinary,
   uploadMultipleToCloudinary,
-  verifyCloudinaryConnection
+  verifyCloudinaryConnection,
+  UPLOAD_OPTIMIZATION
 };
