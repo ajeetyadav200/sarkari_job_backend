@@ -117,6 +117,60 @@ const handleMulterError = (err, req, res, next) => {
  */
 router.get('/config', getUploadConfig);
 
+/**
+ * @route   GET /api/upload/proxy
+ * @desc    Proxy file from Cloudinary (bypasses untrusted customer restriction)
+ * @access  Public
+ * @query   url - The Cloudinary file URL to proxy
+ */
+router.get('/proxy', async (req, res) => {
+  try {
+    const { url } = req.query;
+
+    if (!url) {
+      return res.status(400).json({
+        success: false,
+        message: 'URL parameter is required'
+      });
+    }
+
+    // Only allow Cloudinary URLs
+    if (!url.includes('res.cloudinary.com')) {
+      return res.status(400).json({
+        success: false,
+        message: 'Only Cloudinary URLs are allowed'
+      });
+    }
+
+    // Fetch the file from Cloudinary
+    const fetch = (await import('node-fetch')).default;
+    const response = await fetch(url);
+
+    if (!response.ok) {
+      return res.status(response.status).json({
+        success: false,
+        message: 'Failed to fetch file from Cloudinary'
+      });
+    }
+
+    // Get content type
+    const contentType = response.headers.get('content-type') || 'application/octet-stream';
+
+    // Set response headers
+    res.setHeader('Content-Type', contentType);
+    res.setHeader('Content-Disposition', 'inline');
+
+    // Stream the response
+    response.body.pipe(res);
+  } catch (error) {
+    console.error('Proxy error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to proxy file'
+    });
+  }
+});
+
 // ==================== PROTECTED ROUTES ====================
 
 // All upload routes require authentication

@@ -31,7 +31,7 @@ const validateName = (name) => {
 
 // Assistant creation validation
 const validateAssistantData = (data) => {
-    const { firstName, lastName, email, password } = data;
+    const { firstName, lastName, email, password, phone } = data;
     const errors = [];
 
     if (!firstName || !validateName(firstName)) {
@@ -50,12 +50,16 @@ const validateAssistantData = (data) => {
         errors.push("Password must be at least 8 characters with uppercase, lowercase and number");
     }
 
+    if (phone && !validatePhone(phone)) {
+        errors.push("Please provide a valid Indian phone number");
+    }
+
     return errors;
 };
 
 // Assistant update validation
 const validateAssistantUpdateData = (data) => {
-    const { firstName, lastName, email } = data;
+    const { firstName, lastName, email, phone } = data;
     const errors = [];
 
     if (firstName && !validateName(firstName)) {
@@ -70,7 +74,9 @@ const validateAssistantUpdateData = (data) => {
         errors.push("Please provide a valid email address");
     }
 
-    
+    if (phone && !validatePhone(phone)) {
+        errors.push("Please provide a valid Indian phone number");
+    }
 
     return errors;
 };

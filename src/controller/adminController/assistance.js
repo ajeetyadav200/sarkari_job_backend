@@ -25,7 +25,7 @@ exports.createAssistant = async (req, res) => {
             });
         }
 
-        const { firstName, lastName, email, password } = req.body;
+        const { firstName, lastName, email, password, phone } = req.body;
 
         // Validate request data
         const validationErrors = validateAssistantData(req.body);
@@ -52,6 +52,7 @@ exports.createAssistant = async (req, res) => {
             lastName,
             email,
             password,
+            phone,
             role: "assistant",
         });
 

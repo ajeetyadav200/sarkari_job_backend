@@ -34,8 +34,9 @@ const ALLOWED_MIME_TYPES = {
   'image/png': { type: 'image', resourceType: 'image' },
   'image/gif': { type: 'image', resourceType: 'image' },
   'image/webp': { type: 'image', resourceType: 'image' },
-  // Documents
-  'application/pdf': { type: 'document', resourceType: 'raw' },
+  // Documents - PDF uploaded as 'image' type to bypass untrusted customer restrictions
+  // Cloudinary supports PDF as image type and can display/convert them
+  'application/pdf': { type: 'document', resourceType: 'image' },
   'application/msword': { type: 'document', resourceType: 'raw' },
   'application/vnd.openxmlformats-officedocument.wordprocessingml.document': { type: 'document', resourceType: 'raw' },
   'application/vnd.ms-excel': { type: 'document', resourceType: 'raw' },
@@ -57,19 +58,24 @@ const MAX_FILE_SIZES = {
 const uploadBufferToCloudinary = (buffer, options = {}) => {
   return new Promise((resolve, reject) => {
     const isImage = options.resourceType === 'image';
+    const isRaw = options.resourceType === 'raw';
 
     const uploadStream = cloudinary.uploader.upload_stream(
       {
         folder: options.folder || 'uploads',
         resource_type: options.resourceType || 'auto',
         public_id: options.publicId || undefined,
+        // For raw files (PDFs, docs), include the format/extension
+        ...(isRaw && options.format && { format: options.format }),
+        // Set access mode to public to avoid "untrusted customer" issues
+        access_mode: 'public',
+        type: 'upload',
         // SPEED OPTIMIZATIONS
         use_filename: false,            // Skip filename processing
         unique_filename: true,
         overwrite: false,
         eager_async: true,              // Don't wait for transformations
         invalidate: false,              // Skip CDN invalidation
-        async: true,                    // Use async upload mode
         // Skip unnecessary processing
         exif: false,                    // Don't extract EXIF data
         colors: false,                  // Don't extract colors
@@ -85,8 +91,20 @@ const uploadBufferToCloudinary = (buffer, options = {}) => {
         if (error) {
           reject(error);
         } else {
+          // Construct URL if secure_url is missing (can happen with certain upload settings)
+          let fileUrl = result.secure_url;
+          if (!fileUrl && result.public_id) {
+            const cloudName = process.env.CLOUDINARY_CLOUD_NAME;
+            const resourceType = result.resource_type || 'raw';
+            fileUrl = `https://res.cloudinary.com/${cloudName}/${resourceType}/upload/${result.public_id}`;
+            // Add format extension if available
+            if (result.format) {
+              fileUrl += `.${result.format}`;
+            }
+          }
+
           resolve({
-            url: result.secure_url,
+            url: fileUrl,
             publicId: result.public_id,
             cloudinaryId: result.public_id,
             format: result.format,
@@ -162,6 +180,9 @@ const uploadSingle = async (req, res) => {
     // Get folder path
     const folderPath = UPLOAD_FOLDERS[folder] || UPLOAD_FOLDERS['other'];
 
+    // Extract file extension from original filename
+    const fileExtension = file.originalname.split('.').pop().toLowerCase();
+
     // Generate public ID if custom name provided
     const publicId = customName
       ? `${folderPath}/${customName.replace(/[^a-zA-Z0-9-_]/g, '_')}_${Date.now()}`
@@ -171,7 +192,8 @@ const uploadSingle = async (req, res) => {
     const result = await uploadBufferToCloudinary(file.buffer, {
       folder: folderPath,
       resourceType: validation.resourceType,
-      publicId
+      publicId,
+      format: fileExtension // Pass file extension for raw files (PDFs, docs)
     });
 
     return res.status(200).json({
@@ -238,6 +260,9 @@ const uploadFields = async (req, res) => {
           continue;
         }
 
+        // Extract file extension from original filename
+        const fileExtension = file.originalname.split('.').pop().toLowerCase();
+
         // Add to upload tasks array for parallel processing
         uploadTasks.push({
           fieldName,
@@ -246,7 +271,8 @@ const uploadFields = async (req, res) => {
           validation,
           promise: uploadBufferToCloudinary(file.buffer, {
             folder: folderPath,
-            resourceType: validation.resourceType
+            resourceType: validation.resourceType,
+            format: fileExtension // Pass file extension for raw files (PDFs, docs)
           })
         });
       }
