@@ -2,6 +2,7 @@
 
 const User = require("../../models/auth");
 const bcrypt = require("bcryptjs");
+const Permission = require("../../models/permission/permissionSchema");
 const { validateAssistantData, validateAssistantUpdateData } = require("../../utils/validation");
 
 // Create assistant only by admin
@@ -238,11 +239,40 @@ exports.getAllAssistants = async (req, res) => {
             { password: 0 } // Exclude password field
         ).sort({ createdAt: -1 });
 
+        // Get permissions for all assistants
+        const assistantIds = assistants.map(a => a._id);
+        const permissions = await Permission.find({ userId: { $in: assistantIds } });
+
+        // Create permission map for quick lookup
+        const permissionMap = {};
+        permissions.forEach(p => {
+            permissionMap[p.userId.toString()] = p;
+        });
+
+        // Combine assistants with their permissions
+        const assistantsWithPermissions = assistants.map(assistant => {
+            const assistantObj = assistant.toObject();
+            const userPermission = permissionMap[assistant._id.toString()];
+
+            if (userPermission) {
+                assistantObj.permissions = userPermission.getAllPermissions();
+                assistantObj.permissionId = userPermission._id;
+                assistantObj.permissionRemarks = userPermission.remarks;
+                assistantObj.permissionActive = userPermission.isActive;
+            } else {
+                // Return default permissions for assistant role
+                assistantObj.permissions = Permission.getDefaultPermissions('assistant');
+                assistantObj.permissionId = null;
+            }
+
+            return assistantObj;
+        });
+
         res.status(200).json({
             success: true,
             message: "Assistants fetched successfully",
-            data: assistants,
-            count: assistants.length
+            data: assistantsWithPermissions,
+            count: assistantsWithPermissions.length
         });
 
     } catch (err) {
@@ -281,10 +311,24 @@ exports.getAssistant = async (req, res) => {
             });
         }
 
+        // Get permissions for this assistant
+        const assistantObj = assistant.toObject();
+        const permission = await Permission.findOne({ userId: assistantId });
+
+        if (permission) {
+            assistantObj.permissions = permission.getAllPermissions();
+            assistantObj.permissionId = permission._id;
+            assistantObj.permissionRemarks = permission.remarks;
+            assistantObj.permissionActive = permission.isActive;
+        } else {
+            assistantObj.permissions = Permission.getDefaultPermissions('assistant');
+            assistantObj.permissionId = null;
+        }
+
         res.status(200).json({
             success: true,
             message: "Assistant fetched successfully",
-            data: assistant
+            data: assistantObj
         });
 
     } catch (err) {

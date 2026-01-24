@@ -1,5 +1,5 @@
 const User = require("../../models/auth");
-
+const Permission = require("../../models/permission/permissionSchema");
 const { validatePublisherData, validatePublisherUpdateData } = require("../../utils/validation");
 
 // Create publisher only by admin
@@ -240,11 +240,40 @@ exports.getAllPublishers = async (req, res) => {
             { password: 0 } // Exclude password field
         ).sort({ createdAt: -1 });
 
+        // Get permissions for all publishers
+        const publisherIds = publishers.map(p => p._id);
+        const permissions = await Permission.find({ userId: { $in: publisherIds } });
+
+        // Create permission map for quick lookup
+        const permissionMap = {};
+        permissions.forEach(p => {
+            permissionMap[p.userId.toString()] = p;
+        });
+
+        // Combine publishers with their permissions
+        const publishersWithPermissions = publishers.map(publisher => {
+            const publisherObj = publisher.toObject();
+            const userPermission = permissionMap[publisher._id.toString()];
+
+            if (userPermission) {
+                publisherObj.permissions = userPermission.getAllPermissions();
+                publisherObj.permissionId = userPermission._id;
+                publisherObj.permissionRemarks = userPermission.remarks;
+                publisherObj.permissionActive = userPermission.isActive;
+            } else {
+                // Return default permissions for publisher role
+                publisherObj.permissions = Permission.getDefaultPermissions('publisher');
+                publisherObj.permissionId = null;
+            }
+
+            return publisherObj;
+        });
+
         res.status(200).json({
             success: true,
             message: "Publishers fetched successfully",
-            data: publishers,
-            count: publishers.length
+            data: publishersWithPermissions,
+            count: publishersWithPermissions.length
         });
 
     } catch (err) {
@@ -283,10 +312,24 @@ exports.getPublisher = async (req, res) => {
             });
         }
 
+        // Get permissions for this publisher
+        const publisherObj = publisher.toObject();
+        const permission = await Permission.findOne({ userId: publisherId });
+
+        if (permission) {
+            publisherObj.permissions = permission.getAllPermissions();
+            publisherObj.permissionId = permission._id;
+            publisherObj.permissionRemarks = permission.remarks;
+            publisherObj.permissionActive = permission.isActive;
+        } else {
+            publisherObj.permissions = Permission.getDefaultPermissions('publisher');
+            publisherObj.permissionId = null;
+        }
+
         res.status(200).json({
             success: true,
             message: "Publisher fetched successfully",
-            data: publisher
+            data: publisherObj
         });
 
     } catch (err) {
